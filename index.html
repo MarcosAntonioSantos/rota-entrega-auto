@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Otimizar Rota de Entrega</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 960px; margin: 20px auto; padding: 0 16px; color: #222; }
+  h1 { color: #004080; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin: 16px 0; background: #fafafa; }
+  button { background: #004080; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 15px; }
+  button:disabled { background: #999; }
+  input[type=file] { padding: 8px; width: 100%; }
+  .status { margin: 12px 0; padding: 10px; border-radius: 6px; background: #eef; }
+  .err { background: #fee; color: #900; }
+  .ok { background: #efe; color: #060; }
+  .downloads a { display: inline-block; margin: 6px 8px 6px 0; padding: 8px 12px; background: #2e75b6; color: #fff; text-decoration: none; border-radius: 5px; }
+  canvas { border: 1px solid #ccc; max-width: 100%; height: auto; margin-top: 12px; }
+  .progress { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .progress > div { height: 100%; background: #004080; width: 0%; transition: width .2s; }
+</style>
+</head>
+<body>
+<h1>Otimizar Rota de Entrega</h1>
+<p>Faça upload da planilha (.xlsx) para gerar a rota otimizada, a planilha final e o relatório visual.</p>
+
+<div class="card">
+  <input type="file" id="fileInput" accept=".xlsx,.xls">
+  <br><br>
+  <button id="processBtn" disabled>Processar</button>
+  <div class="progress"><div id="bar"></div></div>
+  <div id="status" class="status">Aguardando arquivo...</div>
+</div>
+
+<div class="card" id="downloadsCard" style="display:none;">
+  <h3>Arquivos para download</h3>
+  <div class="downloads" id="downloads"></div>
+  <canvas id="reportCanvas"></canvas>
+</div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const processBtn = document.getElementById('processBtn');
+const statusEl = document.getElementById('status');
+const bar = document.getElementById('bar');
+const downloadsCard = document.getElementById('downloadsCard');
+const downloadsDiv = document.getElementById('downloads');
+const canvas = document.getElementById('reportCanvas');
+const ctx = canvas.getContext('2d');
+
+let selectedFile = null;
+fileInput.addEventListener('change', e => {
+  selectedFile = e.target.files[0];
+  processBtn.disabled = !selectedFile;
+  statusEl.textContent = selectedFile ? 'Arquivo: ' + selectedFile.name : 'Aguardando arquivo...';
+  statusEl.className = 'status';
+});
+
+processBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  processBtn.disabled = true;
+  downloadsCard.style.display = 'none';
+  downloadsDiv.innerHTML = '';
+  try {
+    await processFile(selectedFile);
+  } catch (err) {
+    statusEl.textContent = 'Erro: ' + err.message;
+    statusEl.className = 'status err';
+  } finally {
+    processBtn.disabled = false;
+  }
+});
+
+function setProgress(p, msg) {
+  bar.style.width = p + '%';
+  if (msg) statusEl.textContent = msg;
+}
+
+function stdCep(v) {
+  const digits = String(v).replace(/\D/g, '');
+  return digits.length === 8 ? digits : String(v).trim();
+}
+
+function parseAddress(raw) {
+  let s = String(raw).trim();
+  s = s.replace(/\bQ(\d+)LT(\d+)\b/gi, 'Qd $1 Lt $2');
+  s = s.replace(/\bQ(\d+)L(\d+)\b/gi, 'Qd $1 Lt $2');
+  s = s.replace(/\bKD(\d+)LT(\d+)\b/gi, 'Qd $1 Lt $2');
+  let qd = null, lt = null;
+  let m = s.match(/\b(?:kd|qd|quadra|q)\.?\s*([A-Za-z0-9\-]+)/i);
+  if (m) { qd = m[1].toUpperCase().replace('.',''); s = s.replace(m[0], ' ', 1); }
+  m = s.match(/\b(?:lt|lote|lot|l)\.?\s*([0-9][A-Za-z0-9\-]*)/i);
+  if (m) { lt = m[1].toUpperCase().replace('.',''); s = s.replace(m[0], ' ', 1); }
+  const parts = s.split(',').map(p=>p.trim()).filter(Boolean);
+  let streetIdx = 0;
+  for (let i=0;i<parts.length;i++){
+    const first = (parts[i].split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z]/g,'');
+    if (['rua','avenida','av','travessa','trav','alameda','al','estrada','rodovia'].includes(first)) { streetIdx=i; break; }
+  }
+  let streetPart = parts[streetIdx] || s.trim();
+  let street = streetPart.replace(/^Avenida\b/i,'Av.').replace(/^Travessa\b/i,'Trav.').replace(/^R\b(?!\.)/i,'R.').replace(/^Trav\b(?!\.)/i,'Trav.').replace(/\s+/g,' ').trim();
+  const NO_NUM = new Set(['sn','s/n','s n','sem','sem n','n/a','n a','-','']);
+  let numero = null;
+  const obsParts = [];
+  for (let i=0;i<parts.length;i++){
+    if (i===streetIdx) continue;
+    const cand = parts[i].trim();
+    const low = cand.toLowerCase();
+    if (NO_NUM.has(low) || low.startsWith('sem')) continue;
+    if (/residencial|condominio|cond\.?|bairro|setor|jardim|vila|parque|loteamento/i.test(cand)) continue;
+    if (numero === null && /^\d+[a-z]?(\/*\d+[a-z]?)?$/i.test(cand)) { numero = cand; }
+    else obsParts.push(cand);
+  }
+  const obs = obsParts.join(', ').replace(/\s+/g,' ').trim();
+  const comps = [street];
+  if (qd) comps.push('Qd. ' + qd);
+  if (lt) comps.push('Lt. ' + lt);
+  if (numero !== null) comps.push('nº ' + numero);
+  if (obs) comps.push(obs);
+  const formatted = comps.join(', ');
+  const warns = [];
+  if (!qd) warns.push('faltando quadra');
+  if (!lt) warns.push('faltando lote');
+  if (numero === null) warns.push('faltando número');
+  return { formatted, warns };
+}
+
+function coreKey(addr) {
+  let s = addr.toLowerCase();
+  for (const w of ['rua','avenida','av.','av','travessa','trav.','trav','alameda','al.','al','quadra','qd.','qd','lote','lt.','lt','lot']) {
+    s = s.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','g'), ' ');
+  }
+  s = s.replace(/q(?=\d)/g,'').replace(/l(?=\d)/g,'').replace(/[^a-z0-9]/g,'');
+  return s;
+}
+
+async function fetchViaCep(cep) {
+  try {
+    const res = await fetch('https://viacep.com.br/ws/' + cep + '/json/');
+    const d = await res.json();
+    if (d.erro) return null;
+    return d;
+  } catch(e) { return {_error: e.message}; }
+}
+
+async function processFile(file) {
+  setProgress(5, 'Lendo planilha...');
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  const header = aoa[0];
+  const data = aoa.slice(1).filter(r => r && r.length);
+  const idx = name => header.findIndex(h => String(h).trim().toLowerCase() === name.toLowerCase());
+  const I_AT = idx('AT ID'), I_SEQ = idx('Sequence'), I_STOP = idx('Stop'),
+        I_SPX = idx('SPX TN'), I_ADDR = idx('Destination Address'),
+        I_BAIRRO = idx('Bairro'), I_CITY = idx('City'),
+        I_CEP = idx('Zipcode/Postal code'), I_LAT = idx('Latitude'), I_LNG = idx('Longitude');
+
+  setProgress(10, 'Consultando ViaCEP...');
+  const ceps = [...new Set(data.map(r => stdCep(r[I_CEP])))];
+  const viacep = {};
+  for (let i=0;i<ceps.length;i++) {
+    viacep[ceps[i]] = await fetchViaCep(ceps[i]);
+    setProgress(10 + (i/ceps.length)*30, 'ViaCEP ' + (i+1) + '/' + ceps.length);
+    await new Promise(res=>setTimeout(res, 120));
+  }
+
+  const srcBairro = {};
+  for (const r of data) {
+    const c = stdCep(r[I_CEP]);
+    if (!srcBairro[c]) srcBairro[c] = {};
+    const b = String(r[I_BAIRRO]).trim();
+    srcBairro[c][b] = (srcBairro[c][b]||0)+1;
+  }
+  const canonBairro = {};
+  const divergences = [];
+  for (const c of ceps) {
+    const res = viacep[c];
+    const srcTop = srcBairro[c] ? Object.entries(srcBairro[c]).sort((a,b)=>b[1]-a[1])[0][0] : '';
+    if (res && !res._error && res.bairro) {
+      canonBairro[c] = res.bairro;
+      if (res.bairro.trim().toLowerCase() !== srcTop.trim().toLowerCase()) {
+        divergences.push([c, srcTop, res.bairro]);
+      }
+    } else {
+      canonBairro[c] = srcTop;
+    }
+  }
+
+  setProgress(45, 'Padronizando endereços...');
+  const stops = new Map();
+  for (let i=0;i<data.length;i++) {
+    const r = data[i];
+    const cep = stdCep(r[I_CEP]);
+    const {formatted} = parseAddress(r[I_ADDR]);
+    const key = cep + '||' + coreKey(formatted);
+    if (!stops.has(key)) stops.set(key, []);
+    stops.get(key).push(i);
+  }
+  const stopKeys = [...stops.keys()].sort((a,b) => {
+    const ca = a.split('||')[0], cb = b.split('||')[0];
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    const ba = canonBairro[ca]||'', bb = canonBairro[cb]||'';
+    if (ba !== bb) return ba < bb ? -1 : 1;
+    return a < b ? -1 : 1;
+  });
+  const stopNumber = {};
+  stopKeys.forEach((k,i) => stopNumber[k]=i+1);
+
+  setProgress(60, 'Gerando planilha final...');
+  const finalRows = [];
+  for (const k of stopKeys) {
+    const idxs = stops.get(k);
+    const total = idxs.length;
+    const cep = k.split('||')[0];
+    const cb = canonBairro[cep] || '';
+    const sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
+    const warns0 = parseAddress(data[idxs[0]][I_ADDR]).warns;
+    const obsBase = [];
+    if (total > 1) obsBase.push('Mais de 1 pacote no mesmo endereço');
+    const srcBairros = new Set(idxs.map(i=>String(data[i][I_BAIRRO]).trim()));
+    if (srcBairros.size > 1) obsBase.push('Bairro com grafias variantes');
+    obsBase.push(...warns0);
+    for (let n=0;n<idxs.length;n++) {
+      const i = idxs[n];
+      const r = data[i];
+      const w = [...obsBase];
+      for (const x of parseAddress(r[I_ADDR]).warns) if (!w.includes(x)) w.push(x);
+      finalRows.push({
+        'Ordem Otimizada da Rota': stopNumber[k],
+        'Parada Consolidada': stopNumber[k],
+        'Número original do Pacote na Parada': n+1,
+        'Quantidade Total de Pacotes na Parada': total,
+        'Código do Pacote': r[I_SPX],
+        'Sequence Original': r[I_SEQ],
+        'Destinatário': '',
+        'Endereço Original': r[I_ADDR],
+        'Endereço Padronizado': parseAddress(r[I_ADDR]).formatted,
+        'Bairro': cb,
+        'Cidade': r[I_CITY],
+        'CEP': cep,
+        'Latitude': r[I_LAT],
+        'Longitude': r[I_LNG],
+        'Observações': w.join('; ')
+      });
+    }
+  }
+
+  const byBairro = new Map();
+  for (const k of stopKeys) {
+    const cep = k.split('||')[0];
+    const cb = canonBairro[cep] || '';
+    if (!byBairro.has(cb)) byBairro.set(cb, []);
+    byBairro.get(cb).push(k);
+  }
+  const reportLines = [];
+  reportLines.push('SEQUÊNCIA DAS ENTREGAS - ROTA COMPLETA');
+  reportLines.push('TOTAL: ' + stopKeys.length + ' PARADAS  |  ' + data.length + ' PACOTES');
+  reportLines.push('');
+  for (const [bairro, ks] of byBairro) {
+    reportLines.push(bairro.toUpperCase());
+    for (const k of ks) {
+      const idxs = stops.get(k);
+      const sn = stopNumber[k];
+      const total = idxs.length;
+      const sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
+      const seqs = idxs.map(i=>data[i][I_SEQ]).join(', ');
+      for (let n=0;n<idxs.length;n++) {
+        const i = idxs[n];
+        const r = data[i];
+        const flag = total > 1 ? '  (mais de 1 pacote)' : '';
+        reportLines.push('  Parada ' + sn + ' | ' + sa + ' | Seq ' + r[I_SEQ] + ' | ' + total + ' pac' + flag);
+      }
+      if (total > 1) reportLines.push('     -> ' + total + ' pacotes no mesmo endereço (Seq: ' + seqs + ')');
+    }
+    reportLines.push('');
+  }
+
+  setProgress(75, 'Gerando arquivos...');
+  const outWb = XLSX.utils.book_new();
+  const ws0 = XLSX.utils.aoa_to_sheet([header, ...data]);
+  XLSX.utils.book_append_sheet(outWb, ws0, 'Dados Originais');
+  const cols = ['Ordem Otimizada da Rota','Parada Consolidada','Número original do Pacote na Parada','Quantidade Total de Pacotes na Parada','Código do Pacote','Sequence Original','Destinatário','Endereço Original','Endereço Padronizado','Bairro','Cidade','CEP','Latitude','Longitude','Observações'];
+  const aoaFinal = [cols, ...finalRows.map(fr => cols.map(c => fr[c]))];
+  const wsf = XLSX.utils.aoa_to_sheet(aoaFinal);
+  XLSX.utils.book_append_sheet(outWb, wsf, 'Planilha Final');
+  const coordRows = [['Endereço','Latitude','Longitude','Motivo da suspeita']];
+  const seen = new Set();
+  const coordGroups = {};
+  for (let i=0;i<data.length;i++) {
+    const key = data[i][I_LAT]+','+data[i][I_LNG];
+    if (!coordGroups[key]) coordGroups[key]=[];
+    coordGroups[key].push(i);
+  }
+  for (const key in coordGroups) {
+    const idxs = coordGroups[key];
+    const addrs = new Set(idxs.map(i=>String(data[i][I_ADDR])));
+    if (idxs.length>1 && addrs.size>1) {
+      for (const i of idxs) {
+        const k = data[i][I_ADDR]+','+data[i][I_LAT]+','+data[i][I_LNG];
+        if (seen.has(k)) continue;
+        seen.add(k);
+        coordRows.push([data[i][I_ADDR], data[i][I_LAT], data[i][I_LNG], 'Coordenada compartilhada por múltiplos endereços distintos']);
+      }
+    }
+  }
+  const wsc = XLSX.utils.aoa_to_sheet(coordRows);
+  XLSX.utils.book_append_sheet(outWb, wsc, 'Coordenadas Suspeitas');
+  const missing = data.filter(r => String(r[I_CEP]).replace(/\D/g,'').length !== 8);
+  const wsc2 = XLSX.utils.aoa_to_sheet([['CEP Original','CEP Padronizado','Status','Quantidade'], ['-', '-', 'Nenhum CEP faltante ou incompleto encontrado', missing.length]]);
+  XLSX.utils.book_append_sheet(outWb, wsc2, 'CEPs Faltantes');
+  const wsv = XLSX.utils.aoa_to_sheet([['CEP','Logradouro (ViaCEP)','Bairro (ViaCEP)','Localidade (ViaCEP)','UF','Status'], ...ceps.map(c => {
+    const res = viacep[c];
+    if (!res) return [c, '', '', '', '', 'CEP não encontrado'];
+    if (res._error) return [c, '', '', '', '', 'Erro: ' + res._error];
+    return [c, res.logradouro||'', res.bairro||'', res.localidade||'', res.uf||'', 'OK'];
+  })]);
+  XLSX.utils.book_append_sheet(outWb, wsv, 'ViaCEP');
+  const wsa = XLSX.utils.aoa_to_sheet([['Categoria','Detalhe','Quantidade'],
+    ...divergences.map(d => ['Bairro divergente (planilha vs ViaCEP)', d[0]+': planilha="'+d[1]+'" vs ViaCEP="'+d[2]+'"', 1]),
+    ['Endereços consolidados (mesma parada)', 'grupos', [...stops.keys()].filter(k=>stops.get(k).length>1).length],
+    ['Total de pacotes consolidados', 'pacotes', [...stops.values()].reduce((a,v)=>a+(v.length>1?v.length:0),0)],
+    ['Coordenadas compartilhadas por endereços distintos', 'grupos', Object.keys(coordGroups).filter(k=>{const v=coordGroups[k]; const a=new Set(v.map(i=>String(data[i][I_ADDR]))); return v.length>1 && a.size>1;}).length]
+  ]);
+  XLSX.utils.book_append_sheet(outWb, wsa, 'Auditoria');
+  const wsr = XLSX.utils.aoa_to_sheet(reportLines.map(l=>[l]));
+  XLSX.utils.book_append_sheet(outWb, wsr, 'Relatorio Visual');
+
+  const xlsxArray = XLSX.write(outWb, {bookType:'xlsx', type:'array'});
+  const xlsxBlob = new Blob([xlsxArray], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const mdBlob = new Blob([reportLines.join('\n')], {type:'text/markdown;charset=utf-8'});
+
+  // render image
+  renderReportImage(reportLines, byBairro, stops, stopNumber, data, I_ADDR, I_SEQ);
+
+  downloadsDiv.innerHTML = '';
+  addDownload('Planilha otimizada (.xlsx)', xlsxBlob, baseName() + ' - otimizado.xlsx');
+  addDownload('Relatório visual (.md)', mdBlob, 'Relatorio Visual - Rota de Entrega.md');
+  const canvasEl = document.getElementById('reportCanvas');
+  canvasEl.toBlob(blob => addDownload('Relatório visual (.png)', blob, 'Relatorio Visual - Rota de Entrega.png'), 'image/png');
+
+  setProgress(100, 'Concluído!');
+  downloadsCard.style.display = 'block';
+  statusEl.className = 'status ok';
+}
+
+function baseName() { return selectedFile ? selectedFile.name.replace(/\.[^.]+$/,'') : 'planilha'; }
+
+function addDownload(label, blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.textContent = label;
+  downloadsDiv.appendChild(a);
+}
+
+function renderReportImage(reportLines, byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
+  const canvas = document.getElementById('reportCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = 1055;
+  let nLines = 2 + 2;
+  for (const [bairro, ks] of byBairro) {
+    nLines += 1;
+    for (const k of ks) {
+      nLines += stops.get(k).length + (stops.get(k).length>1?1:0);
+    }
+    nLines += 1;
+  }
+  const H = 40 + nLines*13 + 60;
+  canvas.width = W;
+  canvas.height = H;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,W,H);
+  const margin = 16, gap = 12, colW = 340, ncols = 3;
+  const colX = [margin + i*(colW+gap) for i in range(ncols)];
+  let y = margin;
+  ctx.font = 'bold 16px Arial';
+  ctx.fillStyle = '#000';
+  ctx.fillText('SEQUÊNCIA DAS ENTREGAS - ROTA COMPLETA', margin, y+14);
+  y += 22;
+  ctx.font = '12px Arial';
+  ctx.fillText('TOTAL: ' + stops.size + ' PARADAS  |  ' + data.length + ' PACOTES', margin, y+10);
+  y += 20;
+
+  const bairroList = [...byBairro.entries()];
+  const cols = [[],[],[]];
+  const colH = [0,0,0];
+  for (const [name, ks] of bairroList) {
+    let bh = 16 + 12;
+    for (const k of ks) {
+      const idxs = stops.get(k);
+      bh += idxs.length*13;
+      if (idxs.length>1) bh += 12;
+    }
+    bh += 6;
+    const idx = colH.indexOf(Math.min(...colH));
+    cols[idx].push([name, ks]);
+    colH[idx] += bh;
+  }
+
+  const colY = [y, y, y];
+  for (let ci=0; ci<ncols; ci++) {
+    for (const [name, ks] of cols[ci]) {
+      const x = colX[ci];
+      let yy = colY[ci];
+      ctx.fillStyle = '#004080';
+      ctx.fillRect(x, yy, colW, 15);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px Arial';
+      ctx.fillText(name.substring(0,46), x+4, yy+11);
+      yy += 16;
+      ctx.fillStyle = '#555';
+      ctx.font = '10px Arial';
+      ctx.fillText('Nº', x+2, yy+9);
+      ctx.fillText('Endereço', x+26, yy+9);
+      ctx.fillText('Seq', x+210, yy+9);
+      ctx.fillText('Pac', x+colW-30, yy+9);
+      yy += 12;
+      ctx.strokeStyle = '#ccc';
+      ctx.beginPath(); ctx.moveTo(x,yy); ctx.lineTo(x+colW,yy); ctx.stroke();
+      yy += 2;
+      for (const k of ks) {
+        const idxs = stops.get(k);
+        const sn = stopNumber[k];
+        const total = idxs.length;
+        const addr = parseAddress(data[idxs[0]][I_ADDR]).formatted;
+        for (let n=0;n<idxs.length;n++) {
+          const i = idxs[n];
+          const seq = data[i][I_SEQ];
+          ctx.fillStyle = '#004080';
+          ctx.font = 'bold 11px Arial';
+          ctx.fillText(String(sn), x+2, yy+9);
+          ctx.fillStyle = '#000';
+          ctx.font = '10px Arial';
+          ctx.fillText(addr.substring(0,30), x+26, yy+9);
+          ctx.fillStyle = '#555';
+          ctx.fillText('Seq '+seq, x+210, yy+9);
+          const col = total > 1 ? '#c00000' : '#808080';
+          ctx.fillStyle = col;
+          ctx.fillText(total+'pac', x+colW-30, yy+9);
+          yy += 13;
+        }
+        if (total > 1) {
+          ctx.fillStyle = '#c00000';
+          ctx.font = '10px Arial';
+          ctx.fillText('-> ' + total + ' pacotes no mesmo endereço', x+4, yy+9);
+          yy += 12;
+        }
+      }
+      yy += 6;
+      colY[ci] = yy;
+    }
+  }
+}
+</script>
+</body>
+</html>
+EOF
