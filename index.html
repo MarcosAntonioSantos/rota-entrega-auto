@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Otimizar Rota de Entrega</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; max-width: 960px; margin: 20px auto; padding: 0 16px; color: #222; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 1100px; margin: 20px auto; padding: 0 16px; color: #222; background: #f5f7fa; }
   h1 { color: #004080; }
-  .card { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin: 16px 0; background: #fafafa; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin: 16px 0; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.06); }
   button { background: #004080; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 15px; }
   button:disabled { background: #999; }
   input[type=file] { padding: 8px; width: 100%; }
@@ -16,9 +17,27 @@
   .err { background: #fee; color: #900; }
   .ok { background: #efe; color: #060; }
   .downloads a { display: inline-block; margin: 6px 8px 6px 0; padding: 8px 12px; background: #2e75b6; color: #fff; text-decoration: none; border-radius: 5px; }
-  canvas { border: 1px solid #ccc; max-width: 100%; height: auto; margin-top: 12px; }
   .progress { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin: 8px 0; }
   .progress > div { height: 100%; background: #004080; width: 0%; transition: width .2s; }
+  /* report styles */
+  #report { background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.08); margin-top: 16px; }
+  #report .title { text-align: center; font-size: 22px; font-weight: 700; color: #004080; margin: 0 0 4px; }
+  #report .subtitle { text-align: center; font-size: 13px; color: #555; margin: 0 0 12px; }
+  #report .legend { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; font-size: 12px; color: #444; margin: 8px 0 14px; }
+  #report .legend span::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+  #report .legend .l1::before { background: #004080; }
+  #report .legend .l2::before { background: #004080; }
+  #report .legend .l3::before { background: #c00000; }
+  #report .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  #report .bairro { border: 1px solid #ddd; border-radius: 6px; overflow: hidden; margin-bottom: 10px; break-inside: avoid; }
+  #report .bairro-header { background: #004080; color: #fff; padding: 6px 8px; font-weight: 700; font-size: 12px; }
+  #report .row { display: grid; grid-template-columns: 34px 1fr 70px 40px; gap: 4px; padding: 4px 8px; border-top: 1px solid #f0f0f0; font-size: 11px; align-items: center; }
+  #report .row .num { font-weight: 700; color: #004080; }
+  #report .row .addr { color: #222; }
+  #report .row .seq { color: #666; }
+  #report .row .cnt { font-weight: 700; text-align: right; }
+  #report .row .cnt.multi { color: #c00000; }
+  #report .consolidated { padding: 2px 8px 6px; font-size: 10px; color: #c00000; font-style: italic; }
 </style>
 </head>
 <body>
@@ -36,7 +55,10 @@
 <div class="card" id="downloadsCard" style="display:none;">
   <h3>Arquivos para download</h3>
   <div class="downloads" id="downloads"></div>
-  <canvas id="reportCanvas"></canvas>
+</div>
+
+<div id="reportWrap" style="display:none;">
+  <div id="report"></div>
 </div>
 
 <script>
@@ -46,8 +68,8 @@ const statusEl = document.getElementById('status');
 const bar = document.getElementById('bar');
 const downloadsCard = document.getElementById('downloadsCard');
 const downloadsDiv = document.getElementById('downloads');
-const canvas = document.getElementById('reportCanvas');
-const ctx = canvas.getContext('2d');
+const reportWrap = document.getElementById('reportWrap');
+const reportEl = document.getElementById('report');
 
 let selectedFile = null;
 fileInput.addEventListener('change', e => {
@@ -61,6 +83,7 @@ processBtn.addEventListener('click', async () => {
   if (!selectedFile) return;
   processBtn.disabled = true;
   downloadsCard.style.display = 'none';
+  reportWrap.style.display = 'none';
   downloadsDiv.innerHTML = '';
   try {
     await processFile(selectedFile);
@@ -255,28 +278,6 @@ async function processFile(file) {
     if (!byBairro.has(cb)) byBairro.set(cb, []);
     byBairro.get(cb).push(k);
   }
-  const reportLines = [];
-  reportLines.push('SEQUÊNCIA DAS ENTREGAS - ROTA COMPLETA');
-  reportLines.push('TOTAL: ' + stopKeys.length + ' PARADAS  |  ' + data.length + ' PACOTES');
-  reportLines.push('');
-  for (const [bairro, ks] of byBairro) {
-    reportLines.push(bairro.toUpperCase());
-    for (const k of ks) {
-      const idxs = stops.get(k);
-      const sn = stopNumber[k];
-      const total = idxs.length;
-      const sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
-      const seqs = idxs.map(i=>data[i][I_SEQ]).join(', ');
-      for (let n=0;n<idxs.length;n++) {
-        const i = idxs[n];
-        const r = data[i];
-        const flag = total > 1 ? '  (mais de 1 pacote)' : '';
-        reportLines.push('  Parada ' + sn + ' | ' + sa + ' | Seq ' + r[I_SEQ] + ' | ' + total + ' pac' + flag);
-      }
-      if (total > 1) reportLines.push('     -> ' + total + ' pacotes no mesmo endereço (Seq: ' + seqs + ')');
-    }
-    reportLines.push('');
-  }
 
   setProgress(75, 'Gerando arquivos...');
   const outWb = XLSX.utils.book_new();
@@ -325,6 +326,28 @@ async function processFile(file) {
     ['Coordenadas compartilhadas por endereços distintos', 'grupos', Object.keys(coordGroups).filter(k=>{const v=coordGroups[k]; const a=new Set(v.map(i=>String(data[i][I_ADDR]))); return v.length>1 && a.size>1;}).length]
   ]);
   XLSX.utils.book_append_sheet(outWb, wsa, 'Auditoria');
+  const reportLines = [];
+  reportLines.push('SEQUÊNCIA DAS ENTREGAS - ROTA COMPLETA');
+  reportLines.push('TOTAL: ' + stopKeys.length + ' PARADAS  |  ' + data.length + ' PACOTES');
+  reportLines.push('');
+  for (const [bairro, ks] of byBairro) {
+    reportLines.push(bairro.toUpperCase());
+    for (const k of ks) {
+      const idxs = stops.get(k);
+      const sn = stopNumber[k];
+      const total = idxs.length;
+      const sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
+      const seqs = idxs.map(i=>data[i][I_SEQ]).join(', ');
+      for (let n=0;n<idxs.length;n++) {
+        const i = idxs[n];
+        const r = data[i];
+        const flag = total > 1 ? '  (mais de 1 pacote)' : '';
+        reportLines.push('  Parada ' + sn + ' | ' + sa + ' | Seq ' + r[I_SEQ] + ' | ' + total + ' pac' + flag);
+      }
+      if (total > 1) reportLines.push('     -> ' + total + ' pacotes no mesmo endereço (Seq: ' + seqs + ')');
+    }
+    reportLines.push('');
+  }
   const wsr = XLSX.utils.aoa_to_sheet(reportLines.map(l=>[l]));
   XLSX.utils.book_append_sheet(outWb, wsr, 'Relatorio Visual');
 
@@ -332,14 +355,17 @@ async function processFile(file) {
   const xlsxBlob = new Blob([xlsxArray], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const mdBlob = new Blob([reportLines.join('\n')], {type:'text/markdown;charset=utf-8'});
 
-  // render image
-  renderReportImage(reportLines, byBairro, stops, stopNumber, data, I_ADDR, I_SEQ);
+  // render HTML report
+  renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ);
 
   downloadsDiv.innerHTML = '';
   addDownload('Planilha otimizada (.xlsx)', xlsxBlob, baseName() + ' - otimizado.xlsx');
   addDownload('Relatório visual (.md)', mdBlob, 'Relatorio Visual - Rota de Entrega.md');
-  const canvasEl = document.getElementById('reportCanvas');
-  canvasEl.toBlob(blob => addDownload('Relatório visual (.png)', blob, 'Relatorio Visual - Rota de Entrega.png'), 'image/png');
+  // PNG from html2canvas
+  const reportEl = document.getElementById('report');
+  html2canvas(reportEl, {scale: 2, backgroundColor: '#ffffff'}).then(canvas => {
+    canvas.toBlob(blob => addDownload('Relatório visual (.png)', blob, 'Relatorio Visual - Rota de Entrega.png'), 'image/png');
+  });
 
   setProgress(100, 'Concluído!');
   downloadsCard.style.display = 'block';
@@ -357,36 +383,26 @@ function addDownload(label, blob, filename) {
   downloadsDiv.appendChild(a);
 }
 
-function renderReportImage(reportLines, byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
-  const canvas = document.getElementById('reportCanvas');
-  const ctx = canvas.getContext('2d');
-  const W = 1055;
-  let nLines = 2 + 2;
-  for (const [bairro, ks] of byBairro) {
-    nLines += 1;
-    for (const k of ks) {
-      nLines += stops.get(k).length + (stops.get(k).length>1?1:0);
-    }
-    nLines += 1;
-  }
-  const H = 40 + nLines*13 + 60;
-  canvas.width = W;
-  canvas.height = H;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0,0,W,H);
-  const margin = 16, gap = 12, colW = 340, ncols = 3;
-  const colX = [margin + i*(colW+gap) for i in range(ncols)];
-  let y = margin;
-  ctx.font = 'bold 16px Arial';
-  ctx.fillStyle = '#000';
-  ctx.fillText('SEQUÊNCIA DAS ENTREGAS - ROTA COMPLETA', margin, y+14);
-  y += 22;
-  ctx.font = '12px Arial';
-  ctx.fillText('TOTAL: ' + stops.size + ' PARADAS  |  ' + data.length + ' PACOTES', margin, y+10);
-  y += 20;
-
+function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
+  const container = document.getElementById('report');
+  container.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'title';
+  title.textContent = 'SEQUÊNCIA DAS ENTREGAS - ROTA COMPLETA';
+  container.appendChild(title);
+  const sub = document.createElement('div');
+  sub.className = 'subtitle';
+  sub.textContent = 'TOTAL: ' + stops.size + ' PARADAS  |  ' + data.length + ' PACOTES';
+  container.appendChild(sub);
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML = '<span class="l1">Nº Shopee = parada original</span><span class="l2">Nº Azul = nossa numeração</span><span class="l3">Mais de 1 pacote no mesmo endereço</span>';
+  container.appendChild(legend);
+  const cols = document.createElement('div');
+  cols.className = 'cols';
+  // distribute bairros into 3 columns by balanced height
   const bairroList = [...byBairro.entries()];
-  const cols = [[],[],[]];
+  const columns = [[],[],[]];
   const colH = [0,0,0];
   for (const [name, ks] of bairroList) {
     let bh = 16 + 12;
@@ -397,31 +413,25 @@ function renderReportImage(reportLines, byBairro, stops, stopNumber, data, I_ADD
     }
     bh += 6;
     const idx = colH.indexOf(Math.min(...colH));
-    cols[idx].push([name, ks]);
+    columns[idx].push([name, ks]);
     colH[idx] += bh;
   }
-
-  const colY = [y, y, y];
-  for (let ci=0; ci<ncols; ci++) {
-    for (const [name, ks] of cols[ci]) {
-      const x = colX[ci];
-      let yy = colY[ci];
-      ctx.fillStyle = '#004080';
-      ctx.fillRect(x, yy, colW, 15);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px Arial';
-      ctx.fillText(name.substring(0,46), x+4, yy+11);
-      yy += 16;
-      ctx.fillStyle = '#555';
-      ctx.font = '10px Arial';
-      ctx.fillText('Nº', x+2, yy+9);
-      ctx.fillText('Endereço', x+26, yy+9);
-      ctx.fillText('Seq', x+210, yy+9);
-      ctx.fillText('Pac', x+colW-30, yy+9);
-      yy += 12;
-      ctx.strokeStyle = '#ccc';
-      ctx.beginPath(); ctx.moveTo(x,yy); ctx.lineTo(x+colW,yy); ctx.stroke();
-      yy += 2;
+  for (let ci=0; ci<3; ci++) {
+    const col = document.createElement('div');
+    for (const [name, ks] of columns[ci]) {
+      const card = document.createElement('div');
+      card.className = 'bairro';
+      const hdr = document.createElement('div');
+      hdr.className = 'bairro-header';
+      hdr.textContent = name;
+      card.appendChild(hdr);
+      // column headers
+      const hrow = document.createElement('div');
+      hrow.className = 'row';
+      hrow.style.fontWeight = '700';
+      hrow.style.color = '#555';
+      hrow.innerHTML = '<div>Nº</div><div>Endereço</div><div>Seq</div><div>Pac</div>';
+      card.appendChild(hrow);
       for (const k of ks) {
         const idxs = stops.get(k);
         const sn = stopNumber[k];
@@ -430,30 +440,36 @@ function renderReportImage(reportLines, byBairro, stops, stopNumber, data, I_ADD
         for (let n=0;n<idxs.length;n++) {
           const i = idxs[n];
           const seq = data[i][I_SEQ];
-          ctx.fillStyle = '#004080';
-          ctx.font = 'bold 11px Arial';
-          ctx.fillText(String(sn), x+2, yy+9);
-          ctx.fillStyle = '#000';
-          ctx.font = '10px Arial';
-          ctx.fillText(addr.substring(0,30), x+26, yy+9);
-          ctx.fillStyle = '#555';
-          ctx.fillText('Seq '+seq, x+210, yy+9);
-          const col = total > 1 ? '#c00000' : '#808080';
-          ctx.fillStyle = col;
-          ctx.fillText(total+'pac', x+colW-30, yy+9);
-          yy += 13;
+          const row = document.createElement('div');
+          row.className = 'row';
+          const num = document.createElement('div');
+          num.className = 'num';
+          num.textContent = sn;
+          const a = document.createElement('div');
+          a.className = 'addr';
+          a.textContent = addr;
+          const s = document.createElement('div');
+          s.className = 'seq';
+          s.textContent = 'Seq ' + seq;
+          const c = document.createElement('div');
+          c.className = 'cnt' + (total>1?' multi':'');
+          c.textContent = total + 'pac';
+          row.appendChild(num); row.appendChild(a); row.appendChild(s); row.appendChild(c);
+          card.appendChild(row);
         }
         if (total > 1) {
-          ctx.fillStyle = '#c00000';
-          ctx.font = '10px Arial';
-          ctx.fillText('-> ' + total + ' pacotes no mesmo endereço', x+4, yy+9);
-          yy += 12;
+          const cons = document.createElement('div');
+          cons.className = 'consolidated';
+          cons.textContent = '-> ' + total + ' pacotes no mesmo endereço';
+          card.appendChild(cons);
         }
       }
-      yy += 6;
-      colY[ci] = yy;
+      col.appendChild(card);
     }
+    cols.appendChild(col);
   }
+  container.appendChild(cols);
+  reportWrap.style.display = 'block';
 }
 </script>
 </body>
