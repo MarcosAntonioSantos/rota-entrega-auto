@@ -261,7 +261,7 @@ def main():
             for n, i in enumerate(idxs, start=1):
                 r = data[i]
                 flag = '  (mais de 1 pacote)' if total > 1 else ''
-                lines.append(f'  Parada {sn} | {sa} | Pac {r[3]} | Seq {r[1]} | CEP {cep}{flag}')
+                lines.append(f'  Parada {sn} | {sa} | Seq {r[1]} | {total} pac{flag}')
             if total > 1:
                 lines.append(f'     -> {total} pacotes no mesmo endereço (Seq: {seqs})')
         lines.append('')
@@ -296,4 +296,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-EOF
