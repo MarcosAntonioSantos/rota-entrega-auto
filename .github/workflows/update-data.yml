@@ -25,4 +25,3 @@ jobs:
           git add version.json
           git commit -m "chore: update data version" || echo "no changes"
           git push
-EOF
