@@ -13,11 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install geocodebr huggingface_hub
       - name: Update data
         run: python scripts/update_data.py
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
       - name: Commit version
         run: |
           git config user.name "github-actions"

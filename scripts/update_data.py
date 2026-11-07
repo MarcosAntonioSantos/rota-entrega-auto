@@ -1,45 +1,27 @@
-"""Atualiza o Parquet do CNEFE (município) no Hugging Face e version.json."""
+"""Atualiza version.json (sinaliza nova versão dos dados)."""
 import os, json, datetime
-import geocodebr
-
-MUNICIPIO = "Anapolis"
-ESTADO = "GO"
 
 def main():
-    # Exemplo: geocodificar um conjunto de CEPs do município para gerar o Parquet
-    # Aqui você pode adaptar para baixar/filtrar o CNEFE conforme necessário.
-    from geocodebr import busca_por_cep
-    # Exemplo de CEPs do município (substitua pela lista real)
-    ceps = []
-    resultado = busca_por_cep(cep=ceps, verboso=False)
-    df = resultado.to_pandas() if hasattr(resultado, 'to_pandas') else resultado
+    # Ler versão atual
+    version_file = "version.json"
+    try:
+        with open(version_file, encoding="utf-8") as f:
+            current = json.load(f)
+    except Exception:
+        current = {}
 
-    # Salvar Parquet local
-    out_path = "data/municipio.parquet"
-    os.makedirs("data", exist_ok=True)
-    df.to_parquet(out_path, index=False)
-
-    # Upload para Hugging Face
-    hf_token = os.environ.get("HF_TOKEN")
-    if hf_token:
-        from huggingface_hub import HfApi
-        api = HfApi(token=hf_token)
-        api.upload_file(
-            path_or_fileobj=out_path,
-            path_in_repo="municipio.parquet",
-            repo_id="MarcosAntonioSantos/rota-entrega-dados",
-            repo_type="dataset",
-        )
-        print("Upload para Hugging Face concluído.")
-
-    # Atualizar version.json
+    new_version = datetime.date.today().isoformat()
     version = {
-        "version": datetime.date.today().isoformat(),
-        "municipio": MUNICIPIO,
-        "estado": ESTADO,
+        "version": new_version,
         "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "note": "Dados podem ter sido atualizados. O app detecta a nova versão e avisa o usuário.",
     }
-    with open("version.json", "w", encoding="utf-8") as f:
+    # preservar campos extras se existirem
+    for k in ("municipio", "estado"):
+        if k in current:
+            version[k] = current[k]
+
+    with open(version_file, "w", encoding="utf-8") as f:
         json.dump(version, f, indent=2, ensure_ascii=False)
     print("version.json atualizado:", version)
 
