@@ -678,6 +678,25 @@ function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ, mult
   reportWrap.style.display = 'block';
 }
 </script>
+<script>
+// Verificação de versão dos dados
+(async function() {
+  try {
+    const res = await fetch('version.json?_=' + Date.now());
+    if (!res.ok) return;
+    const v = await res.json();
+    const local = localStorage.getItem('dataVersion');
+    if (local && local !== v.version) {
+      const banner = document.createElement('div');
+      banner.className = 'status ok';
+      banner.style.marginTop = '8px';
+      banner.textContent = 'Nova versão dos dados disponível (' + v.version + '). Recarregue a página.';
+      document.querySelector('h1').after(banner);
+    }
+    localStorage.setItem('dataVersion', v.version);
+  } catch(e) {}
+})();
+</script>
 </body>
 </html>
 EOF

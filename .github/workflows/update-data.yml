@@ -1,0 +1,28 @@
+name: Update CNEFE data (monthly)
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'   # todo dia 1 do mês, 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install geocodebr huggingface_hub
+      - name: Update data
+        run: python scripts/update_data.py
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - name: Commit version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add version.json
+          git commit -m "chore: update data version" || echo "no changes"
+          git push
+EOF
