@@ -406,12 +406,7 @@ def main():
             sa = parse_address(data[idxs[0]][4])[0]
             cep = k[0]
             seqs = ', '.join(str(data[i][1]) for i in idxs)
-            for n, i in enumerate(idxs, start=1):
-                r = data[i]
-                flag = '  (mais de 1 pacote)' if total > 1 else ''
-                lines.append(f'  Parada {sn} | {sa} | Seq {r[1]} | {total} pac{flag}')
-            if total > 1:
-                lines.append(f'     -> {total} pacotes no mesmo endereço (Seq: {seqs})')
+            lines.append(f'  Parada {sn} | {sa} | {seqs} | {total} pac')
         lines.append('')
     lines.append('RESUMO DAS PARADAS COM MAIS DE 1 PACOTE')
     for k in stop_keys_sorted:

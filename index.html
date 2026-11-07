@@ -470,13 +470,7 @@ async function processFile(file) {
       let sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
       if (_rc0) { let _rep = coreCluster[_cep0+'||'+_rc0] || _rc0; _rep = coreCanonical[_rep] || _rep; if (_rep && _rep !== _rc0) sa = sa.replace(new RegExp(_rc0.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), _rep); }
       const seqs = idxs.map(i=>data[i][I_SEQ]).join(', ');
-      for (let n=0;n<idxs.length;n++) {
-        const i = idxs[n];
-        const r = data[i];
-        const flag = total > 1 ? '  (mais de 1 pacote)' : '';
-        reportLines.push('  Parada ' + sn + ' | ' + sa + ' | Seq ' + r[I_SEQ] + ' | ' + total + ' pac' + flag);
-      }
-      if (total > 1) reportLines.push('     -> ' + total + ' pacotes no mesmo endereço (Seq: ' + seqs + ')');
+      reportLines.push('  Parada ' + sn + ' | ' + sa + ' | ' + seqs + ' | ' + total + ' pac');
     }
     reportLines.push('');
   }
@@ -627,32 +621,23 @@ function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
         const sn = stopNumber[k];
         const total = idxs.length;
         const addr = parseAddress(data[idxs[0]][I_ADDR]).formatted;
-        for (let n=0;n<idxs.length;n++) {
-          const i = idxs[n];
-          const seq = data[i][I_SEQ];
-          const row = document.createElement('div');
-          row.className = 'row';
-          const num = document.createElement('div');
-          num.className = 'num';
-          num.textContent = sn;
-          const a = document.createElement('div');
-          a.className = 'addr';
-          a.textContent = addr;
-          const s = document.createElement('div');
-          s.className = 'seq';
-          s.textContent = 'Seq ' + seq;
-          const c = document.createElement('div');
-          c.className = 'cnt' + (total>1?' multi':'');
-          c.textContent = total + 'pac';
-          row.appendChild(num); row.appendChild(a); row.appendChild(s); row.appendChild(c);
-          card.appendChild(row);
-        }
-        if (total > 1) {
-          const cons = document.createElement('div');
-          cons.className = 'consolidated';
-          cons.textContent = '-> ' + total + ' pacotes no mesmo endereço';
-          card.appendChild(cons);
-        }
+        const seqs = idxs.map(i=>data[i][I_SEQ]).join(', ');
+        const row = document.createElement('div');
+        row.className = 'row';
+        const num = document.createElement('div');
+        num.className = 'num';
+        num.textContent = sn;
+        const a = document.createElement('div');
+        a.className = 'addr';
+        a.textContent = addr;
+        const s = document.createElement('div');
+        s.className = 'seq';
+        s.textContent = seqs;
+        const c = document.createElement('div');
+        c.className = 'cnt' + (total>1?' multi':'');
+        c.textContent = total + 'pac';
+        row.appendChild(num); row.appendChild(a); row.appendChild(s); row.appendChild(c);
+        card.appendChild(row);
       }
       col.appendChild(card);
     }
