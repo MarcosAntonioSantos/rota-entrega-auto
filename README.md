@@ -56,9 +56,10 @@ flowchart TD
 2. Crie a tabela:
    ```sql
    create table enderecos (
-     cep text, logradouro text, numero text, bairro text,
-     lat double precision, lon double precision,
-     primary key (cep, logradouro, numero)
+     cep text, logradouro text, numero text default '',
+     quadra text default '', lote text default '',
+     bairro text, lat double precision, lon double precision,
+     primary key (cep, logradouro, numero, quadra, lote)
    );
    ```
 3. Ative RLS com política de leitura pública (anon key).

@@ -510,12 +510,18 @@ async function processFile(file) {
       const street = formatted.split(',')[0].trim();
       const mNum = formatted.match(/nº\s*(\S+)/);
       const num = mNum ? mNum[1] : '';
-      const key = cep + '|' + street + '|' + num;
+      const mQd = formatted.match(/Qd\.?\s*(\S+)/i);
+      const mLt = formatted.match(/Lt\.?\s*(\S+)/i);
+      const qd = mQd ? mQd[1] : '';
+      const lt = mLt ? mLt[1] : '';
+      const key = cep + '|' + street + '|' + num + '|' + qd + '|' + lt;
       if (!uniq.has(key)) {
         uniq.set(key, {
           cep: cep,
           logradouro: street,
           numero: num,
+          quadra: qd,
+          lote: lt,
           bairro: canonBairro[cep] || String(r[I_BAIRRO]).trim(),
           lat: r[I_LAT],
           lon: r[I_LNG]

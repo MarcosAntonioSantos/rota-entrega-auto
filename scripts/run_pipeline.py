@@ -506,22 +506,26 @@ def main():
             import requests
             uniq = {}
             for fr in final_rows:
-                key = (fr['CEP'], fr['Endereço Padronizado'].split(',')[0].strip(), fr['Endereço Padronizado'])
+                addr = fr['Endereço Padronizado']
+                street = addr.split(',')[0].strip()
+                mNum = re.search(r'nº\\s*(\\S+)', addr)
+                num = mNum.group(1) if mNum else ''
+                mQd = re.search(r'Qd\.?\\s*(\\S+)', addr, re.IGNORECASE)
+                mLt = re.search(r'Lt\.?\\s*(\\S+)', addr, re.IGNORECASE)
+                qd = mQd.group(1) if mQd else ''
+                lt = mLt.group(1) if mLt else ''
+                key = (fr['CEP'], street, num, qd, lt)
                 if key not in uniq:
                     uniq[key] = {
                         'cep': fr['CEP'],
-                        'logradouro': fr['Endereço Padronizado'].split(',')[0].strip(),
-                        'numero': '',
+                        'logradouro': street,
+                        'numero': num,
+                        'quadra': qd,
+                        'lote': lt,
                         'bairro': fr['Bairro'],
                         'lat': fr['Latitude'],
                         'lon': fr['Longitude'],
                     }
-            # extrair número
-            for fr in final_rows:
-                key = (fr['CEP'], fr['Endereço Padronizado'].split(',')[0].strip(), fr['Endereço Padronizado'])
-                m = re.search(r'nº\\s*(\\S+)', fr['Endereço Padronizado'])
-                if m and key in uniq:
-                    uniq[key]['numero'] = m.group(1)
             rows = list(uniq.values())
             r = requests.post(sb_url + '/rest/v1/enderecos', json=rows, headers={
                 'apikey': sb_key, 'Authorization': 'Bearer ' + sb_key,
