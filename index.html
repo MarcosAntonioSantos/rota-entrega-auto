@@ -283,6 +283,10 @@ async function processFile(file) {
       const r = data[i];
       const w = [...obsBase];
       for (const x of parseAddress(r[I_ADDR]).warns) if (!w.includes(x)) w.push(x);
+      const _pa = parseAddress(r[I_ADDR]);
+      if (_pa.warns.includes('faltando quadra') && _pa.warns.includes('faltando lote') && _pa.warns.includes('faltando número')) {
+        w.push('Endereço incompleto — revisar obrigatoriamente');
+      }
       if (r._moved) w.push('Coordenada corrigida via geocodificação');
       finalRows.push({
         'Ordem Otimizada da Rota': stopNumber[k],

@@ -29,6 +29,7 @@ Verifique:
 * CEPs incompatíveis.
 * CEPs faltantes ou incompletos.
 * Endereços sem CEP.
+* Endereços incompletos (apenas CEP + logradouro) — revisão obrigatória.
 * Coordenadas ausentes.
 * Coordenadas duplicadas.
 * Coordenadas incompatíveis com o endereço informado.
@@ -80,6 +81,21 @@ Padronizar o número do CEP para somente números (8 dígitos), conforme exigido
 * (Opcional) Para exibição, pode ser formatado como "00000-000", mas o valor padronizado utilizado nas consultas e agrupamentos deve ser somente números.
 
 Manter sempre uma referência ao CEP original.
+
+#### 2.2.1 Revisão de Endereços (Prioridade)
+
+Antes de gerar coordenadas, revisar os endereços conforme níveis de prioridade:
+
+1. CEP — chave principal para localizar o logradouro.
+2. Logradouro (nome da rua) — deve ser compatível com o CEP (ViaCEP).
+3. Número (nº) — se houver; ausência deve ser sinalizada.
+4. Quadra (Qd.) — se houver; ausência deve ser sinalizada.
+5. Lote (Lt.) — se houver; ausência deve ser sinalizada.
+
+Regra de completude:
+
+- Endereços compostos apenas por CEP + nome do logradouro são INCOMPLETOS e devem ser revistos obrigatoriamente antes da geocodificação.
+- Ausência de número/quadra/lote deve ser sinalizada em Observações ("faltando número/quadra/lote").
 
 #### 2.3 Consulta à API ViaCEP
 

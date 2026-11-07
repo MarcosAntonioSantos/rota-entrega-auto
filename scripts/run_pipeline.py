@@ -161,6 +161,9 @@ def main():
             w = list(obs_base)
             for x in addr_warnings(r[4]):
                 if x not in w: w.append(x)
+            _pa_warns = addr_warnings(r[4])
+            if 'faltando quadra' in _pa_warns and 'faltando lote' in _pa_warns and 'faltando número' in _pa_warns:
+                w.append('Endereço incompleto — revisar obrigatoriamente')
             final_rows.append({
                 'Ordem Otimizada da Rota': stop_number[k],
                 'Parada Consolidada': stop_number[k],
