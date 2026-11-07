@@ -20,6 +20,7 @@ python scripts/run_pipeline.py "caminho/para/planilha.xlsx"
 
 - Python 3.10+
 - openpyxl, easyocr, Pillow, requests (ou urllib)
+- (Opcional) geocodebr — geocodificação brasileira via CNEFE/IBGE para validar/enriquecer coordenadas
 
 ## Prompt
 

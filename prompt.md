@@ -168,6 +168,8 @@ Verificar:
 * Coordenadas compartilhadas por vários endereços.
 * Possíveis erros de geocodificação.
 
+Quando disponível, utilizar o pacote geocodebr (https://github.com/ipea/geocodebr) para geocodificar endereços e validar/enriquecer coordenadas (geocode, busca_por_cep), complementando o ViaCEP.
+
 Gerar uma tabela específica chamada:
 
 "Coordenadas Suspeitas"
