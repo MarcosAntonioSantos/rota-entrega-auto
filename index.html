@@ -48,6 +48,8 @@
   <input type="file" id="fileInput" accept=".xlsx,.xls">
   <br><br>
   <label><input type="checkbox" id="geocodeChk"> Corrigir coordenadas via geocodificação (Nominatim/OSM) — mais lento</label>
+  <br>
+  <label><input type="checkbox" id="supabaseChk" ${supabaseEnabled()?'':'disabled'}> Usar Supabase (alta precisão CNEFE) ${supabaseEnabled()?'':'(configure SUPABASE_URL/KEY)'}</label>
   <br><br>
   <button id="processBtn" disabled>Processar</button>
   <div class="progress"><div id="bar"></div></div>
@@ -77,6 +79,11 @@ const downloadsCard = document.getElementById('downloadsCard');
 const downloadsDiv = document.getElementById('downloads');
 const reportWrap = document.getElementById('reportWrap');
 const reportEl = document.getElementById('report');
+
+// === CONFIGURAÇÃO SUPABASE (preencha após criar o projeto) ===
+const SUPABASE_URL = '';   // ex.: https://xxxxx.supabase.co
+const SUPABASE_KEY = '';   // anon key (pública, segura para frontend)
+// ============================================================
 
 let selectedFile = null;
 fileInput.addEventListener('change', e => {
@@ -215,6 +222,35 @@ async function fetchViaCep(cep) {
   } catch(e) { return {_error: e.message}; }
 }
 
+function supabaseEnabled() { return SUPABASE_URL && SUPABASE_KEY; }
+
+async function supabaseQuery(cep) {
+  if (!supabaseEnabled()) return null;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/enderecos?cep=eq.' + cep + '&select=logradouro,numero,bairro,lat,lon', {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+    });
+    const d = await res.json();
+    return Array.isArray(d) && d.length ? d : null;
+  } catch(e) { return null; }
+}
+
+async function supabaseUpsert(rows) {
+  if (!supabaseEnabled()) return;
+  try {
+    await fetch(SUPABASE_URL + '/rest/v1/enderecos', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(rows)
+    });
+  } catch(e) { console.warn('supabase upsert failed', e); }
+}
+
 async function processFile(file) {
   setProgress(5, 'Lendo planilha...');
   const buf = await file.arrayBuffer();
@@ -229,6 +265,34 @@ async function processFile(file) {
         I_BAIRRO = idx('Bairro'), I_CITY = idx('City'),
         I_CEP = idx('Zipcode/Postal code'), I_LAT = idx('Latitude'), I_LNG = idx('Longitude');
 
+  // geocoding via Supabase (alta precisão)
+  const useSupabase = document.getElementById('supabaseChk').checked && supabaseEnabled();
+  if (useSupabase) {
+    setProgress(8, 'Consultando Supabase...');
+    const origCoords = data.map(r => [r[I_LAT], r[I_LNG]]);
+    for (let i=0;i<data.length;i++) {
+      const r = data[i];
+      const cep = stdCep(r[I_CEP]);
+      const res = await supabaseQuery(cep);
+      if (res) {
+        // pick best match by logradouro similarity
+        const addr = String(r[I_ADDR]).toLowerCase();
+        let best = res[0];
+        for (const row of res) {
+          if (row.logradouro && addr.includes(String(row.logradouro).toLowerCase())) { best = row; break; }
+        }
+        if (best && best.lat && best.lon) {
+          const [olat, olng] = origCoords[i];
+          const nlat = parseFloat(best.lat), nlng = parseFloat(best.lon);
+          const dist = Math.sqrt(Math.pow((olat-nlat)*111000,2) + Math.pow((olng-nlng)*111000*Math.cos(olat*Math.PI/180),2));
+          data[i][I_LAT] = nlat;
+          data[i][I_LNG] = nlng;
+          data[i]._geocoded = true;
+          data[i]._moved = dist > 100;
+        }
+      }
+    }
+  }
   // geocoding opcional
   const useGeocode = document.getElementById('geocodeChk').checked;
   const origCoords = data.map(r => [r[I_LAT], r[I_LNG]]);
@@ -435,6 +499,31 @@ async function processFile(file) {
   }
   const multiBairroStreets = new Set([...streetBairros.entries()].filter(([s,bs])=>bs.size>1).map(([s])=>s));
 
+  // upsert de endereços no Supabase (sem apagar dados anteriores)
+  if (supabaseEnabled()) {
+    setProgress(72, 'Atualizando base Supabase...');
+    const uniq = new Map();
+    for (let i=0;i<data.length;i++) {
+      const r = data[i];
+      const cep = stdCep(r[I_CEP]);
+      const {formatted} = parseAddress(r[I_ADDR]);
+      const street = formatted.split(',')[0].trim();
+      const mNum = formatted.match(/nº\s*(\S+)/);
+      const num = mNum ? mNum[1] : '';
+      const key = cep + '|' + street + '|' + num;
+      if (!uniq.has(key)) {
+        uniq.set(key, {
+          cep: cep,
+          logradouro: street,
+          numero: num,
+          bairro: canonBairro[cep] || String(r[I_BAIRRO]).trim(),
+          lat: r[I_LAT],
+          lon: r[I_LNG]
+        });
+      }
+    }
+    await supabaseUpsert([...uniq.values()]);
+  }
   setProgress(75, 'Gerando arquivos...');
   const outWb = XLSX.utils.book_new();
   const cols = ['Ordem Otimizada da Rota','Parada Consolidada','Número original do Pacote na Parada','Quantidade Total de Pacotes na Parada','Código do Pacote','Sequence Original','Destinatário','Endereço Original','Endereço Padronizado','Bairro','Cidade','CEP','Latitude','Longitude','Observações'];
@@ -677,25 +766,6 @@ function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ, mult
   container.appendChild(cols);
   reportWrap.style.display = 'block';
 }
-</script>
-<script>
-// Verificação de versão dos dados
-(async function() {
-  try {
-    const res = await fetch('version.json?_=' + Date.now());
-    if (!res.ok) return;
-    const v = await res.json();
-    const local = localStorage.getItem('dataVersion');
-    if (local && local !== v.version) {
-      const banner = document.createElement('div');
-      banner.className = 'status ok';
-      banner.style.marginTop = '8px';
-      banner.textContent = 'Nova versão dos dados disponível (' + v.version + '). Recarregue a página.';
-      document.querySelector('h1').after(banner);
-    }
-    localStorage.setItem('dataVersion', v.version);
-  } catch(e) {}
-})();
 </script>
 </body>
 </html>

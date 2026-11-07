@@ -498,6 +498,39 @@ def main():
     print('merged groups', len(merged_groups), 'pkgs', sum(len(stops[k]) for k in merged_groups))
     print('coord dup groups', len(dup_coord))
     print('viacep divergences', len(viacep_divergences))
+    # upsert no Supabase (sem apagar dados anteriores), se configurado
+    sb_url = os.environ.get('SUPABASE_URL')
+    sb_key = os.environ.get('SUPABASE_KEY')
+    if sb_url and sb_key:
+        try:
+            import requests
+            uniq = {}
+            for fr in final_rows:
+                key = (fr['CEP'], fr['Endereço Padronizado'].split(',')[0].strip(), fr['Endereço Padronizado'])
+                if key not in uniq:
+                    uniq[key] = {
+                        'cep': fr['CEP'],
+                        'logradouro': fr['Endereço Padronizado'].split(',')[0].strip(),
+                        'numero': '',
+                        'bairro': fr['Bairro'],
+                        'lat': fr['Latitude'],
+                        'lon': fr['Longitude'],
+                    }
+            # extrair número
+            for fr in final_rows:
+                key = (fr['CEP'], fr['Endereço Padronizado'].split(',')[0].strip(), fr['Endereço Padronizado'])
+                m = re.search(r'nº\\s*(\\S+)', fr['Endereço Padronizado'])
+                if m and key in uniq:
+                    uniq[key]['numero'] = m.group(1)
+            rows = list(uniq.values())
+            r = requests.post(sb_url + '/rest/v1/enderecos', json=rows, headers={
+                'apikey': sb_key, 'Authorization': 'Bearer ' + sb_key,
+                'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates'
+            }, timeout=60)
+            print('Supabase upsert:', r.status_code, len(rows), 'registros')
+        except Exception as e:
+            print('Supabase upsert falhou:', e)
+
     print('saved', OUT_XLSX)
     print('saved', OUT_MD)
 
