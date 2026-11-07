@@ -152,6 +152,7 @@ function parseAddress(raw) {
     const low = cand.toLowerCase();
     if (NO_NUM.has(low) || low.startsWith('sem')) continue;
     if (/residencial|condominio|cond\.?|bairro|setor|jardim|vila|parque|loteamento/i.test(cand)) continue;
+    if (/qd\.?|quadra|lt\.?|lote|lot\b/i.test(cand)) continue;
     if (numero === null && /^\d+[a-z]?(\/*\d+[a-z]?)?$/i.test(cand)) { numero = cand; }
     else obsParts.push(cand);
   }

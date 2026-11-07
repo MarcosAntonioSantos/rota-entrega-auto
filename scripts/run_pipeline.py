@@ -123,6 +123,8 @@ def main():
                 continue
             if re.search(r'residencial|condominio|cond\.?|bairro|setor|jardim|vila|parque|loteamento', cand, re.IGNORECASE):
                 continue
+            if re.search(r'qd\.?|quadra|lt\.?|lote|lot\b', cand, re.IGNORECASE):
+                continue
             if numero is None and re.match(r'^\d+[a-z]?(/\d+[a-z]?)?$', cand, re.IGNORECASE):
                 numero = cand
             else:
