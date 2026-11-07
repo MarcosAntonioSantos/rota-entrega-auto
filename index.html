@@ -47,6 +47,8 @@
 <div class="card">
   <input type="file" id="fileInput" accept=".xlsx,.xls">
   <br><br>
+  <label><input type="checkbox" id="geocodeChk"> Corrigir coordenadas via geocodificação (Nominatim/OSM) — mais lento</label>
+  <br><br>
   <button id="processBtn" disabled>Processar</button>
   <div class="progress"><div id="bar"></div></div>
   <div id="status" class="status">Aguardando arquivo...</div>
@@ -181,6 +183,36 @@ async function processFile(file) {
         I_BAIRRO = idx('Bairro'), I_CITY = idx('City'),
         I_CEP = idx('Zipcode/Postal code'), I_LAT = idx('Latitude'), I_LNG = idx('Longitude');
 
+  // geocoding opcional
+  const useGeocode = document.getElementById('geocodeChk').checked;
+  const origCoords = data.map(r => [r[I_LAT], r[I_LNG]]);
+  if (useGeocode) {
+    setProgress(8, 'Geocodificando endereços...');
+    const uniqueAddrs = [...new Set(data.map(r => String(r[I_ADDR]) + ', ' + r[I_BAIRRO] + ', ' + r[I_CITY]))];
+    const geoMap = {};
+    for (let i=0;i<uniqueAddrs.length;i++) {
+      const q = uniqueAddrs[i];
+      try {
+        const res = await fetch('https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(q) + '&format=json&limit=1');
+        const d = await res.json();
+        if (d && d[0]) { geoMap[q] = [parseFloat(d[0].lat), parseFloat(d[0].lon)]; }
+      } catch(e) {}
+      setProgress(8 + (i/uniqueAddrs.length)*6, 'Geocodificando ' + (i+1) + '/' + uniqueAddrs.length);
+      await new Promise(res=>setTimeout(res, 1100));
+    }
+    for (let i=0;i<data.length;i++) {
+      const q = String(data[i][I_ADDR]) + ', ' + data[i][I_BAIRRO] + ', ' + data[i][I_CITY];
+      if (geoMap[q]) {
+        const [olat, olng] = origCoords[i];
+        const [nlat, nlng] = geoMap[q];
+        const dist = Math.sqrt(Math.pow((olat-nlat)*111000,2) + Math.pow((olng-nlng)*111000*Math.cos(olat*Math.PI/180),2));
+        data[i][I_LAT] = nlat;
+        data[i][I_LNG] = nlng;
+        data[i]._geocoded = true;
+        data[i]._moved = dist > 100;
+      }
+    }
+  }
   setProgress(10, 'Consultando ViaCEP...');
   const ceps = [...new Set(data.map(r => stdCep(r[I_CEP])))];
   const viacep = {};
@@ -251,6 +283,7 @@ async function processFile(file) {
       const r = data[i];
       const w = [...obsBase];
       for (const x of parseAddress(r[I_ADDR]).warns) if (!w.includes(x)) w.push(x);
+      if (r._moved) w.push('Coordenada corrigida via geocodificação');
       finalRows.push({
         'Ordem Otimizada da Rota': stopNumber[k],
         'Parada Consolidada': stopNumber[k],
