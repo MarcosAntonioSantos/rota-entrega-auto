@@ -95,12 +95,45 @@ def main():
         s = re.sub(r'[^a-z0-9]', '', s)
         return s
 
-    def building_key(raw):
-        # extrai marcador de prédio/condomínio específico (Ed., Prédio, Torre, Bloco, Cond., Condomínio)
-        m = re.search(r'\b(ed\.?|edif[ií]cio|pr[eé]dio|torre|bloco|cond\.?|condom[ií]nio)\s+([A-Za-z0-9].*?)(?=,|$)', str(raw), re.IGNORECASE)
-        if m:
-            return (m.group(1).lower().strip('.') + ' ' + m.group(2).strip()).lower()
-        return None
+    import unicodedata
+    def building_core(raw):
+        s = str(raw)
+        m = re.search(r'(?:cond\.?|condominio|residencial|ed\.?|edificio|pr[eé]dio|torre|bloco|loteamento|conjunto|res\.?)\s+(.+)', s, re.IGNORECASE)
+        if not m:
+            return None
+        tail = m.group(1)
+        # cut at unit markers
+        tail = re.split(r'\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d)\b', tail, flags=re.IGNORECASE)[0]
+        # normalize accents
+        tail = unicodedata.normalize('NFKD', tail).encode('ascii', 'ignore').decode()
+        tail = tail.lower()
+        tail = re.sub(r'[^a-z0-9 ]', ' ', tail)
+        tail = re.sub(r'\b\d+\b', '', tail)
+        tail = re.sub(r'\s+', ' ', tail).strip()
+        if len(tail) < 3:
+            return None
+        return tail
+
+    def edit_dist(a, b):
+        if a == b: return 0
+        if len(a) < len(b): a, b = b, a
+        if len(b) == 0: return len(a)
+        prev = list(range(len(b)+1))
+        for i, ca in enumerate(a):
+            cur = [i+1]
+            for j, cb in enumerate(b):
+                cur.append(min(prev[j+1]+1, cur[j]+1, prev[j]+(ca != cb)))
+            prev = cur
+        return prev[-1]
+
+    def cores_similar(a, b):
+        if a == b: return True
+        if a in b or b in a: return True
+        # token overlap
+        ta = set(a.split()); tb = set(b.split())
+        if ta and tb and len(ta & tb) >= 2: return True
+        if edit_dist(a, b) <= 2: return True
+        return False
 
     viacep_cache = {}
     def viacep(cep):
@@ -141,14 +174,47 @@ def main():
         coord_groups[(r[8], r[9])].append(i)
     dup_coord = {k: v for k, v in coord_groups.items() if len(v) > 1 and len(set(data[i][4] for i in v)) > 1}
 
+    # compute building core per row
+    row_core = [building_core(r[4]) for r in data]
+    # union-find clustering of cores within same CEP by similarity
+    # map (cep, core) -> cluster representative
+    # first, collect unique cores per cep
+    cep_cores = defaultdict(set)
+    for i, r in enumerate(data):
+        c = std_cep(r[7])
+        if row_core[i]:
+            cep_cores[c].add(row_core[i])
+    # cluster cores per cep
+    core_cluster = {}  # (cep, core) -> representative core
+    for c, cores in cep_cores.items():
+        cores = list(cores)
+        parent = {x: x for x in cores}
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+        for i in range(len(cores)):
+            for j in range(i+1, len(cores)):
+                if cores_similar(cores[i], cores[j]):
+                    union(cores[i], cores[j])
+        for x in cores:
+            core_cluster[(c, x)] = find(x)
+
     stops = OrderedDict()
     for i, r in enumerate(data):
         sa = parse_address(r[4])[0]
-        bk = building_key(r[4])
-        if bk:
-            key = (std_cep(r[7]), 'BLD:' + bk)
+        c = std_cep(r[7])
+        rc = row_core[i]
+        if rc:
+            rep = core_cluster.get((c, rc), rc)
+            key = (c, 'BLD:' + rep)
         else:
-            key = (std_cep(r[7]), core_key(sa))
+            key = (c, core_key(sa))
         stops.setdefault(key, []).append(i)
 
     stop_keys_sorted = sorted(stops.keys(), key=lambda k: (k[0], canonical_bairro[k[0]], core_key(parse_address(data[stops[k][0]][4])[0])))
