@@ -125,7 +125,7 @@ function parseAddress(raw) {
   }
   let streetPart = parts[streetIdx] || s.trim();
   let street = streetPart.replace(/^Avenida\b/i,'Av.').replace(/^Travessa\b/i,'Trav.').replace(/^R\b(?!\.)/i,'R.').replace(/^Trav\b(?!\.)/i,'Trav.').replace(/\s+/g,' ').trim();
-  const NO_NUM = new Set(['sn','s/n','s n','sem','sem n','n/a','n a','-','']);
+  const NO_NUM = new Set(['sn','s/n','s n','sem','sem n','n/a','n a','-','','0','00','000','0000']);
   let numero = null;
   const obsParts = [];
   for (let i=0;i<parts.length;i++){

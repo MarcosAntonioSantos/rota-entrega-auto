@@ -54,7 +54,7 @@ def main():
         street = re.sub(r'^R\b(?!\.)', 'R.', street, flags=re.IGNORECASE)
         street = re.sub(r'^Trav\b(?!\.)', 'Trav.', street, flags=re.IGNORECASE)
         street = re.sub(r'\s+', ' ', street).strip()
-        NO_NUM = {'sn','s/n','s n','sem','sem n','n/a','n a','-',''}
+        NO_NUM = {'sn','s/n','s n','sem','sem n','n/a','n a','-','','0','00','000','0000'}
         numero = None
         obs_parts = []
         for i, p in enumerate(parts):
