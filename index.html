@@ -160,13 +160,37 @@ function coreKey(addr) {
   return s;
 }
 function buildingCore(raw) {
-  const m = String(raw).match(/(?:cond\.?|condominio|residencial|ed\.?|edificio|predio|torre|bloco|loteamento|conjunto|res\.?)\s+(.+)/i);
-  if (!m) return null;
-  let tail = m[1].split(/\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d)\b/i)[0];
-  tail = tail.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  tail = tail.replace(/[^a-z0-9 ]/g,' ').replace(/\b\d+\b/g,'').replace(/\s+/g,' ').trim();
-  if (tail.length < 3) return null;
-  return tail;
+  const s = String(raw);
+  let m = s.match(/(?:cond\.?|condominio|residencial|ed\.?|edificio|predio|torre|bloco|loteamento|conjunto|res\.?)\s+(.+)/i);
+  if (m) {
+    let tail = m[1].split(/\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d)\b/i)[0];
+    tail = tail.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim();
+    if (tail.length >= 3) return tail;
+  }
+  // capitalized phrase not in street position
+  const parts = s.split(',').map(p=>p.trim()).filter(Boolean);
+  let streetIdx = null;
+  for (let i=0;i<parts.length;i++) if (/\b(rua|avenida|av\.?|travessa|alameda|estrada|rodovia)\b/i.test(parts[i])) { streetIdx=i; break; }
+  const cands = streetIdx===null ? parts : parts.filter((_,i)=>i!==streetIdx);
+  for (const p of cands) {
+    let cleaned = p.replace(/\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d|nº|no)\b\.?\s*\S*/gi,'');
+    cleaned = cleaned.replace(/\b\d+[-.]?\d*\b/g,'').trim();
+    if (!/[A-Z]/.test(cleaned)) continue;
+    let norm = cleaned.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim();
+    if (norm.split(' ').length >= 2 && norm.length >= 8) return norm;
+  }
+  // whole-string capitalized phrase
+  if (parts.length === 1) {
+    let cleaned = s.replace(/\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d|nº|no)\b\.?\s*\S*/gi,'');
+    cleaned = cleaned.replace(/\b\d+[-.]?\d*\b/g,'');
+    if (/[A-Z]/.test(cleaned)) {
+      let norm = cleaned.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim();
+      for (const w of ['rua','avenida','av','travessa','trav','alameda','al','estrada','rodovia']) norm = norm.replace(new RegExp('\\b'+w+'\\b','g'),'').trim();
+      norm = norm.replace(/\s+/g,' ').trim();
+      if (norm.split(' ').length >= 2 && norm.length >= 8) return norm;
+    }
+  }
+  return null;
 }
 function editDist(a,b){ if(a===b)return 0; if(a.length<b.length){const t=a;a=b;b=t;} if(!b.length)return a.length; let prev=Array.from({length:b.length+1},(_,i)=>i); for(let i=0;i<a.length;i++){let cur=[i+1]; for(let j=0;j<b.length;j++){cur.push(Math.min(prev[j+1]+1,cur[j]+1,prev[j]+(a[i]!==b[j]?1:0)));} prev=cur;} return prev[b.length]; }
 function coresSimilar(a,b){ if(a===b)return true; if(a.includes(b)||b.includes(a))return true; const ta=new Set(a.split(' ')), tb=new Set(b.split(' ')); const inter=[...ta].filter(x=>tb.has(x)).length; if(ta.size&&tb.size&&inter>=2)return true; if(editDist(a,b)<=2)return true; return false; }

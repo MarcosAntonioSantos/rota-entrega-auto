@@ -98,21 +98,49 @@ def main():
     import unicodedata
     def building_core(raw):
         s = str(raw)
+        # 1. keyword-based: keyword followed by name
         m = re.search(r'(?:cond\.?|condominio|residencial|ed\.?|edificio|pr[eé]dio|torre|bloco|loteamento|conjunto|res\.?)\s+(.+)', s, re.IGNORECASE)
-        if not m:
-            return None
-        tail = m.group(1)
-        # cut at unit markers
-        tail = re.split(r'\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d)\b', tail, flags=re.IGNORECASE)[0]
-        # normalize accents
-        tail = unicodedata.normalize('NFKD', tail).encode('ascii', 'ignore').decode()
-        tail = tail.lower()
-        tail = re.sub(r'[^a-z0-9 ]', ' ', tail)
-        tail = re.sub(r'\b\d+\b', '', tail)
-        tail = re.sub(r'\s+', ' ', tail).strip()
-        if len(tail) < 3:
-            return None
-        return tail
+        if m:
+            tail = m.group(1)
+            tail = re.split(r'\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d)\b', tail, flags=re.IGNORECASE)[0]
+            tail = unicodedata.normalize('NFKD', tail).encode('ascii', 'ignore').decode().lower()
+            tail = re.sub(r'[^a-z ]', ' ', tail)
+            tail = re.sub(r'\s+', ' ', tail).strip()
+            if len(tail) >= 3:
+                return tail
+        # 2. capitalized phrase not in street position
+        parts = [p.strip() for p in s.split(',') if p.strip()]
+        street_idx = None
+        for i, p in enumerate(parts):
+            if re.search(r'\b(rua|avenida|av\.?|travessa|alameda|estrada|rodovia)\b', p, re.IGNORECASE):
+                street_idx = i; break
+        # if no street keyword, consider all parts
+        candidate_parts = [p for i, p in enumerate(parts) if i != street_idx] if street_idx is not None else parts
+        for p in candidate_parts:
+            cleaned = re.sub(r'\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d|nº|no)\b\.?\s*\S*', '', p, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\b\d+[-.]?\d*\b', '', cleaned)
+            cleaned = cleaned.strip(' -.,')
+            if not re.search(r'[A-Z]', cleaned):
+                continue
+            norm = unicodedata.normalize('NFKD', cleaned).encode('ascii', 'ignore').decode().lower()
+            norm = re.sub(r'[^a-z ]', ' ', norm)
+            norm = re.sub(r'\s+', ' ', norm).strip()
+            if len(norm.split()) >= 2 and len(norm) >= 8:
+                return norm
+        # 3. whole-string capitalized phrase (no commas)
+        if len(parts) == 1:
+            cleaned = re.sub(r'\b(?:apto|ap\.?|ap|bl\.?|bloco|apt|apt\.|casa|lt\.?|lote|qd\.?|quadra|b\d|nº|no)\b\.?\s*\S*', '', s, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\b\d+[-.]?\d*\b', '', cleaned)
+            if re.search(r'[A-Z]', cleaned):
+                norm = unicodedata.normalize('NFKD', cleaned).encode('ascii', 'ignore').decode().lower()
+                norm = re.sub(r'[^a-z ]', ' ', norm)
+                # remove street words
+                for w in ['rua','avenida','av','travessa','trav','alameda','al','estrada','rodovia']:
+                    norm = re.sub(r'\b'+w+r'\b', '', norm)
+                norm = re.sub(r'\s+', ' ', norm).strip()
+                if len(norm.split()) >= 2 and len(norm) >= 8:
+                    return norm
+        return None
 
     def edit_dist(a, b):
         if a == b: return 0
