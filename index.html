@@ -407,6 +407,17 @@ async function processFile(file) {
     if (!byBairro.has(cb)) byBairro.set(cb, []);
     byBairro.get(cb).push(k);
   }
+  // ruas que aparecem em mais de um bairro
+  const streetBairros = new Map();
+  for (const k of stopKeys) {
+    const cep = k.split('||')[0];
+    const cb = canonBairro[cep] || '';
+    const addr = parseAddress(data[stops.get(k)[0]][I_ADDR]).formatted;
+    const street = addr.split(',')[0].trim();
+    if (!streetBairros.has(street)) streetBairros.set(street, new Set());
+    streetBairros.get(street).add(cb);
+  }
+  const multiBairroStreets = new Set([...streetBairros.entries()].filter(([s,bs])=>bs.size>1).map(([s])=>s));
 
   setProgress(75, 'Gerando arquivos...');
   const outWb = XLSX.utils.book_new();
@@ -484,7 +495,7 @@ async function processFile(file) {
   // render audit
   renderAudit(data, stops, stopKeys, stopNumber, divergences, coordGroups, I_ADDR, I_CEP, I_LAT, I_LNG, missing);
   // render HTML report
-  renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ);
+  renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ, multiBairroStreets);
 
   downloadsDiv.innerHTML = '';
   addDownload('Planilha otimizada (.xlsx)', xlsxBlob, baseName() + ' - otimizado.xlsx');
@@ -567,7 +578,7 @@ function renderAudit(data, stops, stopKeys, stopNumber, divergences, coordGroups
   card.style.display = 'block';
 }
 
-function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
+function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ, multiBairroStreets) {
   const container = document.getElementById('report');
   container.innerHTML = '';
   const title = document.createElement('div');
@@ -629,7 +640,16 @@ function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
         num.textContent = sn;
         const a = document.createElement('div');
         a.className = 'addr';
-        a.textContent = addr;
+        const street = addr.split(',')[0].trim();
+        if (multiBairroStreets.has(street)) {
+          const span = document.createElement('span');
+          span.style.textDecoration = 'underline';
+          span.textContent = street;
+          a.appendChild(span);
+          a.appendChild(document.createTextNode(addr.slice(street.length)));
+        } else {
+          a.textContent = addr;
+        }
         const s = document.createElement('div');
         s.className = 'seq';
         s.textContent = seqs;
