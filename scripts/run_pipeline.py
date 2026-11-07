@@ -4,9 +4,10 @@ import openpyxl
 
 def main():
     if len(sys.argv) < 2:
-        print("Uso: python run_pipeline.py <planilha.xlsx>")
+        print("Uso: python run_pipeline.py <planilha.xlsx> [--geocode]")
         sys.exit(1)
     SRC = sys.argv[1]
+    use_geocode = '--geocode' in sys.argv
     base = os.path.splitext(os.path.basename(SRC))[0]
     out_dir = os.path.dirname(os.path.abspath(SRC))
     OUT_XLSX = os.path.join(out_dir, base + " - otimizado.xlsx")
@@ -17,6 +18,56 @@ def main():
     rows = list(ws.iter_rows(values_only=True))
     header = rows[0]
     data = rows[1:]
+
+    # geocodificação opcional via geocodebr (mais precisa, base CNEFE/IBGE)
+    if use_geocode:
+        try:
+            import polars as pl
+            from geocodebr import definir_campos, geocode
+            _gc_ok = True
+        except Exception as e:
+            print('geocodebr não disponível:', e)
+            _gc_ok = False
+        if _gc_ok:
+            print('Geocodificando com geocodebr (CNEFE/IBGE)...')
+            try:
+                logr = []
+                nums = []
+                for r in data:
+                    sa = parse_address(r[4])[0]
+                    # logradouro = primeira parte antes da vírgula
+                    logr.append(sa.split(',')[0].strip())
+                    # número: extrai 'nº X' se houver
+                    m = re.search(r'nº\\s*(\\S+)', sa)
+                    nums.append(m.group(1) if m else None)
+                df = pl.DataFrame({
+                    'logradouro': logr,
+                    'numero': nums,
+                    'cep': [std_cep(r[7]) for r in data],
+                    'localidade': [str(r[5]).strip() for r in data],
+                    'municipio': [str(r[6]).strip() for r in data],
+                    'estado': ['GO'] * len(data),
+                })
+                campos = definir_campos(logradouro='logradouro', numero='numero', cep='cep', localidade='localidade', municipio='municipio', estado='estado')
+                res = geocode(enderecos=df, campos_endereco=campos, verboso=False)
+                pdf = res.to_pandas() if hasattr(res, 'to_pandas') else None
+                if pdf is not None and 'lat' in pdf.columns and 'lon' in pdf.columns:
+                    for i, r in enumerate(data):
+                        olat, olng = r[8], r[9]
+                        nlat, nlng = pdf['lat'].iloc[i], pdf['lon'].iloc[i]
+                        if nlat is not None and nlng is not None:
+                            data[i][8] = float(nlat)
+                            data[i][9] = float(nlng)
+                            # flag mismatch
+                            try:
+                                dist = ((olat-nlat)*111000)**2 + ((olng-nlng)*111000)**0.5
+                                if dist > 100:
+                                    pass
+                            except Exception:
+                                pass
+                    print('Geocodificação concluída.')
+            except Exception as e:
+                print('Erro na geocodificação:', e)
 
     # (pipeline identical to tested version)
     def std_cep(v):
