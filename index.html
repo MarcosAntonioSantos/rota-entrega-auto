@@ -640,15 +640,10 @@ function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ, mult
         num.textContent = sn;
         const a = document.createElement('div');
         a.className = 'addr';
+        a.textContent = addr;
         const street = addr.split(',')[0].trim();
         if (multiBairroStreets.has(street)) {
-          const span = document.createElement('span');
-          span.style.textDecoration = 'underline';
-          span.textContent = street;
-          a.appendChild(span);
-          a.appendChild(document.createTextNode(addr.slice(street.length)));
-        } else {
-          a.textContent = addr;
+          row.style.backgroundColor = '#fff8dc';
         }
         const s = document.createElement('div');
         s.className = 'seq';
