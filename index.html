@@ -47,9 +47,9 @@
 <div class="card">
   <input type="file" id="fileInput" accept=".xlsx,.xls">
   <br><br>
-  <label><input type="checkbox" id="geocodeChk"> Corrigir coordenadas via geocodificação (Nominatim/OSM) — mais lento</label>
+  <label><input type="checkbox" id="supabaseChk"> Usar Supabase (alta precisão CNEFE) — recomendado</label>
   <br>
-  <label><input type="checkbox" id="supabaseChk"> Usar Supabase (alta precisão CNEFE)</label>
+  <label><input type="checkbox" id="geocodeChk"> Corrigir coordenadas via geocodificação (Nominatim/OSM) — mais lento, use apenas se Supabase não estiver disponível</label>
   <br><br>
   <button id="processBtn" disabled>Processar</button>
   <div class="progress"><div id="bar"></div></div>
@@ -86,6 +86,15 @@ const SUPABASE_KEY = 'sb_publishable_SyeFJc1jysCNMNWLyOuX-w_o5rjNbo-';
 // ============================================================
 
 let selectedFile = null;
+const supabaseChk = document.getElementById('supabaseChk');
+const geocodeChk = document.getElementById('geocodeChk');
+supabaseChk.addEventListener('change', () => {
+  if (supabaseChk.checked) geocodeChk.checked = false;
+});
+geocodeChk.addEventListener('change', () => {
+  if (geocodeChk.checked) supabaseChk.checked = false;
+});
+
 fileInput.addEventListener('change', e => {
   selectedFile = e.target.files[0];
   processBtn.disabled = !selectedFile;
@@ -294,8 +303,8 @@ async function processFile(file) {
       }
     }
   }
-  // geocoding opcional
-  const useGeocode = document.getElementById('geocodeChk').checked;
+  // geocoding opcional — Supabase tem prioridade sobre Nominatim
+  const useGeocode = document.getElementById('geocodeChk').checked && !useSupabase;
   const origCoords = data.map(r => [r[I_LAT], r[I_LNG]]);
   if (useGeocode) {
     setProgress(8, 'Geocodificando endereços...');
