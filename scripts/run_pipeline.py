@@ -95,6 +95,13 @@ def main():
         s = re.sub(r'[^a-z0-9]', '', s)
         return s
 
+    def building_key(raw):
+        # extrai marcador de prédio/condomínio específico (Ed., Prédio, Torre, Bloco, Cond., Condomínio)
+        m = re.search(r'\b(ed\.?|edif[ií]cio|pr[eé]dio|torre|bloco|cond\.?|condom[ií]nio)\s+([A-Za-z0-9].*?)(?=,|$)', str(raw), re.IGNORECASE)
+        if m:
+            return (m.group(1).lower().strip('.') + ' ' + m.group(2).strip()).lower()
+        return None
+
     viacep_cache = {}
     def viacep(cep):
         if cep in viacep_cache: return viacep_cache[cep]
@@ -137,7 +144,11 @@ def main():
     stops = OrderedDict()
     for i, r in enumerate(data):
         sa = parse_address(r[4])[0]
-        key = (std_cep(r[7]), core_key(sa))
+        bk = building_key(r[4])
+        if bk:
+            key = (std_cep(r[7]), 'BLD:' + bk)
+        else:
+            key = (std_cep(r[7]), core_key(sa))
         stops.setdefault(key, []).append(i)
 
     stop_keys_sorted = sorted(stops.keys(), key=lambda k: (k[0], canonical_bairro[k[0]], core_key(parse_address(data[stops[k][0]][4])[0])))

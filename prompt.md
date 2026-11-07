@@ -125,7 +125,7 @@ Identifique automaticamente:
 
 Observação importante: Identifique se há entregas em estabelecimentos comerciais.
 
-Quando múltiplos pedidos/pacotes possuírem o mesmo local físico de entrega (mesmo endereço padronizado):
+Quando múltiplos pedidos/pacotes possuírem o mesmo local físico de entrega (mesmo endereço padronizado OU mesmo prédio/condomínio/edifício/torre/bloco indicado no endereço):
 
 * Considerar apenas UMA PARADA LOGÍSTICA.
 * Manter TODOS os pedidos/pacotes vinculados à parada.

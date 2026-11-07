@@ -159,6 +159,11 @@ function coreKey(addr) {
   s = s.replace(/q(?=\d)/g,'').replace(/l(?=\d)/g,'').replace(/[^a-z0-9]/g,'');
   return s;
 }
+function buildingKey(raw) {
+  const m = String(raw).match(/\b(ed\.?|edificio|predio|torre|bloco|cond\.?|condominio)\s+([A-Za-z0-9].*?)(?=,|$)/i);
+  if (m) return (m[1].toLowerCase().replace('.','') + ' ' + m[2].trim()).toLowerCase();
+  return null;
+}
 
 async function fetchViaCep(cep) {
   try {
@@ -250,7 +255,8 @@ async function processFile(file) {
     const r = data[i];
     const cep = stdCep(r[I_CEP]);
     const {formatted} = parseAddress(r[I_ADDR]);
-    const key = cep + '||' + coreKey(formatted);
+    const bk = buildingKey(r[I_ADDR]);
+    const key = bk ? (cep + '||BLD:' + bk) : (cep + '||' + coreKey(formatted));
     if (!stops.has(key)) stops.set(key, []);
     stops.get(key).push(i);
   }
