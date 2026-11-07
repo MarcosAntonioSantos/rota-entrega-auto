@@ -1,6 +1,7 @@
 {
   "version": "2026-11-07",
+  "updated_at": "2026-11-07T17:27:04.913306Z",
+  "note": "Dados podem ter sido atualizados. O app detecta a nova versão e avisa o usuário.",
   "municipio": "Anapolis",
-  "estado": "GO",
-  "updated_at": "2026-11-07T00:00:00Z"
+  "estado": "GO"
 }
