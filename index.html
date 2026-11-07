@@ -117,16 +117,22 @@ function parseAddress(raw) {
   s = s.replace(/\bQ(\d+)LT(\d+)\b/gi, 'Qd $1 Lt $2');
   s = s.replace(/\bQ(\d+)L(\d+)\b/gi, 'Qd $1 Lt $2');
   s = s.replace(/\bKD(\d+)LT(\d+)\b/gi, 'Qd $1 Lt $2');
+  // normalize colon separators
+  s = s.replace(/\b(qd|quadra|q)\s*:\s*/gi, 'Qd. ');
+  s = s.replace(/\b(lt|lote|lot|l)\s*:\s*/gi, 'Lt. ');
+  s = s.replace(/\b(av|avenida)\s*:\s*/gi, 'Av. ');
+  s = s.replace(/\b(trav|travessa)\s*:\s*/gi, 'Trav. ');
+  s = s.replace(/\b(rua|r)\s*:\s*/gi, 'Rua ');
   let qd = null, lt = null;
-  let m = s.match(/\b(?:kd|qd|quadra|q)\.?\s*([A-Za-z0-9\-]+)/i);
+  let m = s.match(/\b(?:kd|qd|quadra|q)[:.\s]*([A-Za-z0-9\-]+)/i);
   if (m) { qd = m[1].toUpperCase().replace('.',''); s = s.replace(m[0], ' ', 1); }
-  m = s.match(/\b(?:lt|lote|lot|l)\.?\s*([0-9][A-Za-z0-9\-]*)/i);
+  m = s.match(/\b(?:lt|lote|lot|l)[:.\s]*([0-9][A-Za-z0-9\-]*)/i);
   if (m) { lt = m[1].toUpperCase().replace('.',''); s = s.replace(m[0], ' ', 1); }
   const parts = s.split(',').map(p=>p.trim()).filter(Boolean);
   let streetIdx = 0;
   for (let i=0;i<parts.length;i++){
     const first = (parts[i].split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z]/g,'');
-    if (['rua','avenida','av','travessa','trav','alameda','al','estrada','rodovia'].includes(first)) { streetIdx=i; break; }
+    if (['rua','avenida','av','r','travessa','trav','alameda','al','estrada','rodovia'].includes(first)) { streetIdx=i; break; }
   }
   let streetPart = parts[streetIdx] || s.trim();
   let street = streetPart.replace(/^Avenida\b/i,'Av.').replace(/^Travessa\b/i,'Trav.').replace(/^R\b(?!\.)/i,'R.').replace(/^Trav\b(?!\.)/i,'Trav.').replace(/\s+/g,' ').trim();
