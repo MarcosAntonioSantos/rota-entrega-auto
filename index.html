@@ -346,11 +346,27 @@ async function processFile(file) {
     if (!stops.has(key)) stops.set(key, []);
     stops.get(key).push(i);
   }
+  function qlSort(v) {
+    const s = String(v).trim();
+    const n = parseInt(s, 10);
+    if (!isNaN(n) && String(n) === s) return [0, n, ''];
+    return [1, 0, s];
+  }
   const stopKeys = [...stops.keys()].sort((a,b) => {
     const ca = a.split('||')[0], cb = b.split('||')[0];
     if (ca !== cb) return ca < cb ? -1 : 1;
     const ba = canonBairro[ca]||'', bb = canonBairro[cb]||'';
     if (ba !== bb) return ba < bb ? -1 : 1;
+    const addrA = parseAddress(data[stops.get(a)[0]][I_ADDR]).formatted;
+    const addrB = parseAddress(data[stops.get(b)[0]][I_ADDR]).formatted;
+    const qa = (addrA.match(/Qd\.?\s*([A-Za-z0-9\-]+)/i)||[])[1];
+    const la = (addrA.match(/Lt\.?\s*([A-Za-z0-9\-]+)/i)||[])[1];
+    const qb = (addrB.match(/Qd\.?\s*([A-Za-z0-9\-]+)/i)||[])[1];
+    const lb = (addrB.match(/Lt\.?\s*([A-Za-z0-9\-]+)/i)||[])[1];
+    const qas = qlSort(qa), qbs = qlSort(qb);
+    for (let i=0;i<3;i++) { if (qas[i] < qbs[i]) return -1; if (qas[i] > qbs[i]) return 1; }
+    const las = qlSort(la), lbs = qlSort(lb);
+    for (let i=0;i<3;i++) { if (las[i] < lbs[i]) return -1; if (las[i] > lbs[i]) return 1; }
     return a < b ? -1 : 1;
   });
   const stopNumber = {};

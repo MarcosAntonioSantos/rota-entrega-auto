@@ -278,7 +278,20 @@ def main():
             key = (c, core_key(sa))
         stops.setdefault(key, []).append(i)
 
-    stop_keys_sorted = sorted(stops.keys(), key=lambda k: (k[0], canonical_bairro[k[0]], core_key(parse_address(data[stops[k][0]][4])[0])))
+    def _ql_sort(val):
+        v = str(val).strip()
+        try:
+            return (0, int(v), '')
+        except ValueError:
+            return (1, 0, v)
+    def _stop_sortkey(k):
+        addr = parse_address(data[stops[k][0]][4])[0]
+        qm = re.search(r'Qd\.?\s*([A-Za-z0-9\-]+)', addr, re.IGNORECASE)
+        lm = re.search(r'Lt\.?\s*([A-Za-z0-9\-]+)', addr, re.IGNORECASE)
+        q = _ql_sort(qm.group(1)) if qm else (2, 0, '')
+        l = _ql_sort(lm.group(1)) if lm else (2, 0, '')
+        return (k[0], canonical_bairro[k[0]], core_key(addr), q, l)
+    stop_keys_sorted = sorted(stops.keys(), key=_stop_sortkey)
 
     stop_number = {k: idx for idx, k in enumerate(stop_keys_sorted, start=1)}
 
