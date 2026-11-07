@@ -291,6 +291,20 @@ async function processFile(file) {
       cepCores[c].add(rowCore[i]);
     }
   }
+  // canonicalize cores: pick most frequent similar core
+  const coreFreq = {};
+  for (let i=0;i<data.length;i++) { const rc=rowCore[i]; if (rc) coreFreq[rc]=(coreFreq[rc]||0)+1; }
+  function canonicalCore(c) {
+    let best=c, bestFreq=coreFreq[c]||0;
+    for (const other in coreFreq) {
+      if (other===c) continue;
+      if (coresSimilar(c,other) && coreFreq[other]>bestFreq) { best=other; bestFreq=coreFreq[other]; }
+    }
+    return best;
+  }
+  const coreCanonical = {};
+  for (const c in coreFreq) coreCanonical[c]=canonicalCore(c);
+
   const coreCluster = {};
   for (const c in cepCores) {
     const cores = [...cepCores[c]];
@@ -299,7 +313,11 @@ async function processFile(file) {
     function find(x){ while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];} return x; }
     function union(a,b){ const ra=find(a),rb=find(b); if(ra!==rb) parent[ra]=rb; }
     for (let i=0;i<cores.length;i++) for (let j=i+1;j<cores.length;j++) if (coresSimilar(cores[i],cores[j])) union(cores[i],cores[j]);
-    for (const x of cores) coreCluster[c+'||'+x] = find(x);
+    for (const x of cores) {
+      let rep = find(x);
+      rep = coreCanonical[rep] || rep;
+      coreCluster[c+'||'+x] = rep;
+    }
   }
   const stops = new Map();
   for (let i=0;i<data.length;i++) {
@@ -360,7 +378,7 @@ async function processFile(file) {
         'Sequence Original': r[I_SEQ],
         'Destinatário': '',
         'Endereço Original': r[I_ADDR],
-        'Endereço Padronizado': parseAddress(r[I_ADDR]).formatted,
+        'Endereço Padronizado': (function(){ const rc = rowCore[i]; let a = parseAddress(r[I_ADDR]).formatted; if (!rc) return a; let rep = coreCluster[cep+'||'+rc] || rc; rep = coreCanonical[rep] || rep; if (rep && rep !== rc) a = a.replace(new RegExp(rc.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), rep); return a; })(),
         'Bairro': cb,
         'Cidade': r[I_CITY],
         'CEP': cep,
@@ -436,7 +454,10 @@ async function processFile(file) {
       const idxs = stops.get(k);
       const sn = stopNumber[k];
       const total = idxs.length;
-      const sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
+      const _rc0 = rowCore[idxs[0]];
+      const _cep0 = k.split('||')[0];
+      let sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
+      if (_rc0) { let _rep = coreCluster[_cep0+'||'+_rc0] || _rc0; _rep = coreCanonical[_rep] || _rep; if (_rep && _rep !== _rc0) sa = sa.replace(new RegExp(_rc0.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), _rep); }
       const seqs = idxs.map(i=>data[i][I_SEQ]).join(', ');
       for (let n=0;n<idxs.length;n++) {
         const i = idxs[n];

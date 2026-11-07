@@ -212,6 +212,31 @@ def main():
         c = std_cep(r[7])
         if row_core[i]:
             cep_cores[c].add(row_core[i])
+    # canonicalize cores: pick most frequent similar core as representative
+    core_freq = Counter()
+    for i, r in enumerate(data):
+        rc = row_core[i]
+        if rc:
+            core_freq[rc] += 1
+    def canonical_core(c):
+        best = c
+        best_freq = core_freq.get(c, 0)
+        for other, f in core_freq.items():
+            if other == c: continue
+            if cores_similar(c, other) and f > best_freq:
+                best = other; best_freq = f
+        return best
+    core_canonical = {c: canonical_core(c) for c in core_freq}
+
+    def _correct_addr(addr, rc, cep):
+        if not rc:
+            return addr
+        rep = core_cluster.get((cep, rc), rc)
+        rep = core_canonical.get(rep, rep)
+        if rep and rep != rc:
+            return re.sub(re.escape(rc), rep, addr, flags=re.IGNORECASE)
+        return addr
+
     # cluster cores per cep
     core_cluster = {}  # (cep, core) -> representative core
     for c, cores in cep_cores.items():
@@ -231,7 +256,9 @@ def main():
                 if cores_similar(cores[i], cores[j]):
                     union(cores[i], cores[j])
         for x in cores:
-            core_cluster[(c, x)] = find(x)
+            rep = find(x)
+            rep = core_canonical.get(rep, rep)
+            core_cluster[(c, x)] = rep
 
     stops = OrderedDict()
     for i, r in enumerate(data):
@@ -256,6 +283,13 @@ def main():
         cep = k[0]
         cb = canonical_bairro[cep]
         sa = parse_address(data[idxs[0]][4])[0]
+        # spelling correction: replace building core variant with canonical spelling
+        rc0 = row_core[idxs[0]] if idxs[0] < len(row_core) else None
+        if rc0:
+            rep = core_cluster.get((std_cep(data[idxs[0]][7]), rc0), rc0)
+            rep = core_canonical.get(rep, rep)
+            if rep and rep != rc0:
+                sa = re.sub(re.escape(rc0), rep, sa, flags=re.IGNORECASE)
         warns0 = addr_warnings(data[idxs[0]][4])
         obs_base = []
         if total > 1: obs_base.append('Mais de 1 pacote no mesmo endereço')
@@ -278,7 +312,7 @@ def main():
                 'Sequence Original': r[1],
                 'Destinatário': '',
                 'Endereço Original': r[4],
-                'Endereço Padronizado': parse_address(r[4])[0],
+                'Endereço Padronizado': _correct_addr(parse_address(r[4])[0], row_core[i] if i < len(row_core) else None, std_cep(r[7])),
                 'Bairro': cb,
                 'Cidade': r[6],
                 'CEP': cep,
