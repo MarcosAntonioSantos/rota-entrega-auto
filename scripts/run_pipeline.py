@@ -31,18 +31,18 @@ def main():
         s = re.sub(r'\bQ(\d+)L(\d+)\b', r'Qd \1 Lt \2', s, flags=re.IGNORECASE)
         s = re.sub(r'\bKD(\d+)LT(\d+)\b', r'Qd \1 Lt \2', s, flags=re.IGNORECASE)
         # normalize colon separators: qd:, lt:, av:, rua:, r:, trav:
-        s = re.sub(r'\b(qd|quadra|q)\s*:\s*', 'Qd. ', s, flags=re.IGNORECASE)
-        s = re.sub(r'\b(lt|lote|lot|l)\s*:\s*', 'Lt. ', s, flags=re.IGNORECASE)
-        s = re.sub(r'\b(av|avenida)\s*:\s*', 'Av. ', s, flags=re.IGNORECASE)
-        s = re.sub(r'\b(trav|travessa)\s*:\s*', 'Trav. ', s, flags=re.IGNORECASE)
-        s = re.sub(r'\b(rua|r)\s*:\s*', 'Rua ', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(qd|quadra|q)\s*[:.\-]\s*', 'Qd. ', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(lt|lote|lot|l)\s*[:.\-]\s*', 'Lt. ', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(av|avenida)\s*[:.\-]\s*', 'Av. ', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(trav|travessa)\s*[:.\-]\s*', 'Trav. ', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(rua|r)\s*[:.\-]\s*', 'Rua ', s, flags=re.IGNORECASE)
         qd = None
-        m = re.search(r'\b(?:kd|qd|quadra|q)[:.\s]*([A-Za-z0-9\-]+)', s, re.IGNORECASE)
+        m = re.search(r'\b(?:kd|qd|quadra|q)[:.\-\s]*([A-Za-z0-9\-]+)', s, re.IGNORECASE)
         if m:
             qd = m.group(1).upper().rstrip('.')
             s = s.replace(m.group(0), ' ', 1)
         lt = None
-        m = re.search(r'\b(?:lt|lote|lot|l)[:.\s]*([0-9][A-Za-z0-9\-]*)', s, re.IGNORECASE)
+        m = re.search(r'\b(?:lt|lote|lot|l)[:.\-\s]*([0-9][A-Za-z0-9\-]*)', s, re.IGNORECASE)
         if m:
             lt = m.group(1).upper().rstrip('.')
             s = s.replace(m.group(0), ' ', 1)

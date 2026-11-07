@@ -118,11 +118,11 @@ function parseAddress(raw) {
   s = s.replace(/\bQ(\d+)L(\d+)\b/gi, 'Qd $1 Lt $2');
   s = s.replace(/\bKD(\d+)LT(\d+)\b/gi, 'Qd $1 Lt $2');
   // normalize colon separators
-  s = s.replace(/\b(qd|quadra|q)\s*:\s*/gi, 'Qd. ');
-  s = s.replace(/\b(lt|lote|lot|l)\s*:\s*/gi, 'Lt. ');
-  s = s.replace(/\b(av|avenida)\s*:\s*/gi, 'Av. ');
-  s = s.replace(/\b(trav|travessa)\s*:\s*/gi, 'Trav. ');
-  s = s.replace(/\b(rua|r)\s*:\s*/gi, 'Rua ');
+  s = s.replace(/\b(qd|quadra|q)\s*[:.\-]\s*/gi, 'Qd. ');
+  s = s.replace(/\b(lt|lote|lot|l)\s*[:.\-]\s*/gi, 'Lt. ');
+  s = s.replace(/\b(av|avenida)\s*[:.\-]\s*/gi, 'Av. ');
+  s = s.replace(/\b(trav|travessa)\s*[:.\-]\s*/gi, 'Trav. ');
+  s = s.replace(/\b(rua|r)\s*[:.\-]\s*/gi, 'Rua ');
   let qd = null, lt = null;
   let m = s.match(/\b(?:kd|qd|quadra|q)[:.\s]*([A-Za-z0-9\-]+)/i);
   if (m) { qd = m[1].toUpperCase().replace('.',''); s = s.replace(m[0], ' ', 1); }
