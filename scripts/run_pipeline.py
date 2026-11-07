@@ -324,19 +324,19 @@ def main():
     out_wb = openpyxl.Workbook()
     out_wb.remove(out_wb.active)
 
-    ws0 = out_wb.create_sheet('Dados Originais')
-    ws0.append(list(header))
-    for r in data:
-        ws0.append(list(r))
-
     cols = ['Ordem Otimizada da Rota','Parada Consolidada','Número original do Pacote na Parada',
             'Quantidade Total de Pacotes na Parada','Código do Pacote','Sequence Original',
             'Destinatário','Endereço Original','Endereço Padronizado','Bairro','Cidade','CEP',
             'Latitude','Longitude','Observações']
-    wsf = out_wb.create_sheet('Planilha Final')
+    wsf = out_wb.create_sheet('Rota Otimizada')
     wsf.append(cols)
     for fr in final_rows:
         wsf.append([fr[c] for c in cols])
+
+    ws0 = out_wb.create_sheet('Dados Originais')
+    ws0.append(list(header))
+    for r in data:
+        ws0.append(list(r))
 
     wsc = out_wb.create_sheet('Coordenadas Suspeitas')
     wsc.append(['Endereço','Latitude','Longitude','Motivo da suspeita'])

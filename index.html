@@ -59,6 +59,11 @@
   <div class="downloads" id="downloads"></div>
 </div>
 
+<div class="card" id="auditCard" style="display:none;">
+  <h3>Resultado da Auditoria</h3>
+  <div id="auditContent"></div>
+</div>
+
 <div id="reportWrap" style="display:none;">
   <div id="report"></div>
 </div>
@@ -399,12 +404,12 @@ async function processFile(file) {
 
   setProgress(75, 'Gerando arquivos...');
   const outWb = XLSX.utils.book_new();
-  const ws0 = XLSX.utils.aoa_to_sheet([header, ...data]);
-  XLSX.utils.book_append_sheet(outWb, ws0, 'Dados Originais');
   const cols = ['Ordem Otimizada da Rota','Parada Consolidada','Número original do Pacote na Parada','Quantidade Total de Pacotes na Parada','Código do Pacote','Sequence Original','Destinatário','Endereço Original','Endereço Padronizado','Bairro','Cidade','CEP','Latitude','Longitude','Observações'];
   const aoaFinal = [cols, ...finalRows.map(fr => cols.map(c => fr[c]))];
   const wsf = XLSX.utils.aoa_to_sheet(aoaFinal);
-  XLSX.utils.book_append_sheet(outWb, wsf, 'Planilha Final');
+  XLSX.utils.book_append_sheet(outWb, wsf, 'Rota Otimizada');
+  const ws0 = XLSX.utils.aoa_to_sheet([header, ...data]);
+  XLSX.utils.book_append_sheet(outWb, ws0, 'Dados Originais');
   const coordRows = [['Endereço','Latitude','Longitude','Motivo da suspeita']];
   const seen = new Set();
   const coordGroups = {};
@@ -476,6 +481,8 @@ async function processFile(file) {
   const xlsxBlob = new Blob([xlsxArray], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const mdBlob = new Blob([reportLines.join('\n')], {type:'text/markdown;charset=utf-8'});
 
+  // render audit
+  renderAudit(data, stops, stopKeys, stopNumber, divergences, coordGroups, I_ADDR, I_CEP, I_LAT, I_LNG, missing);
   // render HTML report
   renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ);
 
@@ -502,6 +509,62 @@ function addDownload(label, blob, filename) {
   a.download = filename;
   a.textContent = label;
   downloadsDiv.appendChild(a);
+}
+
+function renderAudit(data, stops, stopKeys, stopNumber, divergences, coordGroups, I_ADDR, I_CEP, I_LAT, I_LNG, missing) {
+  const card = document.getElementById('auditCard');
+  const content = document.getElementById('auditContent');
+  content.innerHTML = '';
+  const mergedGroups = [...stops.keys()].filter(k => stops.get(k).length > 1);
+  const consolidatedPkgs = [...stops.values()].reduce((a,v) => a + (v.length>1 ? v.length : 0), 0);
+  const dupCoordGroups = Object.keys(coordGroups).filter(k => {
+    const v = coordGroups[k]; const a = new Set(v.map(i => String(data[i][I_ADDR]))); return v.length>1 && a.size>1;
+  }).length;
+  const missQ = data.filter(r => parseAddress(r[I_ADDR]).warns.includes('faltando quadra')).length;
+  const missL = data.filter(r => parseAddress(r[I_ADDR]).warns.includes('faltando lote')).length;
+  const missN = data.filter(r => parseAddress(r[I_ADDR]).warns.includes('faltando número')).length;
+  const incomplete = data.filter(r => {
+    const w = parseAddress(r[I_ADDR]).warns;
+    return w.includes('faltando quadra') && w.includes('faltando lote') && w.includes('faltando número');
+  }).length;
+  const rows = [
+    ['Total de registros', data.length],
+    ['Total de pacotes', data.length],
+    ['Quantidade original de paradas', data.length],
+    ['Quantidade final de paradas', stopKeys.length],
+    ['Percentual de redução de paradas', ((1 - stopKeys.length/data.length)*100).toFixed(1) + '%'],
+    ['Paradas consolidadas (>1 pacote)', mergedGroups.length + ' (' + consolidatedPkgs + ' pacotes)'],
+    ['Coordenadas compartilhadas por endereços distintos', dupCoordGroups + ' grupos'],
+    ['CEPs faltantes/incompletos', missing.length],
+    ['Endereços faltando quadra', missQ],
+    ['Endereços faltando lote', missL],
+    ['Endereços faltando número', missN],
+    ['Endereços incompletos (revisar obrigatoriamente)', incomplete],
+    ['Divergências ViaCEP (bairro)', divergences.length],
+  ];
+  const tbl = document.createElement('table');
+  tbl.style.width = '100%';
+  tbl.style.borderCollapse = 'collapse';
+  for (const [k,v] of rows) {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = k; td1.style.padding = '4px 8px'; td1.style.borderBottom = '1px solid #eee';
+    const td2 = document.createElement('td'); td2.textContent = v; td2.style.padding = '4px 8px'; td2.style.borderBottom = '1px solid #eee'; td2.style.fontWeight = '700'; td2.style.textAlign = 'right';
+    tr.appendChild(td1); tr.appendChild(td2);
+    tbl.appendChild(tr);
+  }
+  content.appendChild(tbl);
+  if (divergences.length) {
+    const h = document.createElement('h4'); h.textContent = 'Divergências ViaCEP (bairro)';
+    content.appendChild(h);
+    const ul = document.createElement('ul');
+    for (const d of divergences) {
+      const li = document.createElement('li');
+      li.textContent = d[0] + ': planilha="' + d[1] + '" vs ViaCEP="' + d[2] + '"';
+      ul.appendChild(li);
+    }
+    content.appendChild(ul);
+  }
+  card.style.display = 'block';
 }
 
 function renderHtmlReport(byBairro, stops, stopNumber, data, I_ADDR, I_SEQ) {
