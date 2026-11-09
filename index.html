@@ -293,14 +293,18 @@ async function processFile(file) {
       const r = data[i];
       const cep = stdCep(r[I_CEP]);
       const parsed = parseAddress(r[I_ADDR]);
-      const res = await supabaseQuery(cep, parsed.street, parsed.numero, parsed.quadra, parsed.lote, String(r[I_BAIRRO]).trim());
+      let res = await supabaseQuery(cep, parsed.street, parsed.numero, parsed.quadra, parsed.lote, String(r[I_BAIRRO]).trim());
+      let reason = '';
+      let exact = false;
       if (res) {
-        // pick best match by logradouro similarity
         const addr = String(r[I_ADDR]).toLowerCase();
         let best = res[0];
         for (const row of res) {
           if (row.logradouro && addr.includes(String(row.logradouro).toLowerCase())) { best = row; break; }
         }
+        // check exactness
+        if (best && parsed.numero && best.numero && String(best.numero) === String(parsed.numero)) exact = true;
+        if (best && parsed.quadra && best.quadra && String(best.quadra).replace(/[^A-Z0-9]/g,'') === String(parsed.quadra).replace(/[^A-Z0-9]/g,'')) exact = exact && true; else if (parsed.quadra) exact = false;
         if (best && best.lat && best.lon) {
           const [olat, olng] = origCoords[i];
           const nlat = parseFloat(best.lat), nlng = parseFloat(best.lon);
@@ -309,6 +313,33 @@ async function processFile(file) {
           data[i][I_LNG] = nlng;
           data[i]._geocoded = true;
           data[i]._moved = dist > 100;
+          data[i]._geoReason = exact ? 'exato (numero+quadra)' : 'aproximado (rua/CEP)';
+        } else {
+          data[i]._geoReason = 'sem match no Supabase';
+        }
+      } else {
+        // relaxed query: drop numero/quadra/lote
+        const res2 = await supabaseQuery(cep, parsed.street, '', '', '', String(r[I_BAIRRO]).trim());
+        if (res2 && res2.length) {
+          let best = res2[0];
+          const addr = String(r[I_ADDR]).toLowerCase();
+          for (const row of res2) {
+            if (row.logradouro && addr.includes(String(row.logradouro).toLowerCase())) { best = row; break; }
+          }
+          if (best && best.lat && best.lon) {
+            const [olat, olng] = origCoords[i];
+            const nlat = parseFloat(best.lat), nlng = parseFloat(best.lon);
+            const dist = Math.sqrt(Math.pow((olat-nlat)*111000,2) + Math.pow((olng-nlng)*111000*Math.cos(olat*Math.PI/180),2));
+            data[i][I_LAT] = nlat;
+            data[i][I_LNG] = nlng;
+            data[i]._geocoded = true;
+            data[i]._moved = dist > 100;
+            data[i]._geoReason = 'aproximado (sem numero/quadra no CNEFE)';
+          } else {
+            data[i]._geoReason = 'sem match no Supabase';
+          }
+        } else {
+          data[i]._geoReason = 'sem match no Supabase';
         }
       }
     }
@@ -574,7 +605,7 @@ async function processFile(file) {
         const k = data[i][I_ADDR]+','+data[i][I_LAT]+','+data[i][I_LNG];
         if (seen.has(k)) continue;
         seen.add(k);
-        coordRows.push([data[i][I_ADDR], data[i][I_LAT], data[i][I_LNG], 'Coordenada compartilhada por múltiplos endereços distintos']);
+        coordRows.push([data[i][I_ADDR], data[i][I_LAT], data[i][I_LNG], 'Coordenada compartilhada por multiplos enderecos distintos', data[i]._geoReason || '']);
       }
     }
   }
@@ -594,7 +625,10 @@ async function processFile(file) {
     ...divergences.map(d => ['Bairro divergente (planilha vs ViaCEP)', d[0]+': planilha="'+d[1]+'" vs ViaCEP="'+d[2]+'"', 1]),
     ['Endereços consolidados (mesma parada)', 'grupos', [...stops.keys()].filter(k=>stops.get(k).length>1).length],
     ['Total de pacotes consolidados', 'pacotes', [...stops.values()].reduce((a,v)=>a+(v.length>1?v.length:0),0)],
-    ['Coordenadas compartilhadas por endereços distintos', 'grupos', Object.keys(coordGroups).filter(k=>{const v=coordGroups[k]; const a=new Set(v.map(i=>String(data[i][I_ADDR]))); return v.length>1 && a.size>1;}).length]
+    ['Coordenadas compartilhadas por endereços distintos', 'grupos', Object.keys(coordGroups).filter(k=>{const v=coordGroups[k]; const a=new Set(v.map(i=>String(data[i][I_ADDR]))); return v.length>1 && a.size>1;}).length],
+    ['Enderecos com localizacao EXATA (CNEFE)', 'enderecos', data.filter(r=>r._geoReason==='exato (numero+quadra)').length],
+    ['Enderecos com localizacao APROXIMADA', 'enderecos', data.filter(r=>r._geoReason && r._geoReason.indexOf('aproximado')>=0).length],
+    ['Enderecos SEM match no Supabase', 'enderecos', data.filter(r=>r._geoReason==='sem match no Supabase').length]
   ]);
   XLSX.utils.book_append_sheet(outWb, wsa, 'Auditoria');
   const reportLines = [];
