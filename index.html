@@ -176,7 +176,7 @@ function parseAddress(raw) {
   if (!qd) warns.push('faltando quadra');
   if (!lt) warns.push('faltando lote');
   if (numero === null) warns.push('faltando número');
-  return { formatted, warns };
+  return { formatted, warns, street, numero: numero || '', quadra: qd || '', lote: lt || '' };
 }
 
 function coreKey(addr) {
@@ -234,12 +234,21 @@ async function fetchViaCep(cep) {
 
 function supabaseEnabled() { return SUPABASE_URL && SUPABASE_KEY; }
 
-async function supabaseQuery(cep) {
+async function supabaseQuery(cep, logradouro, numero, quadra, lote, bairro) {
   if (!supabaseEnabled()) return null;
   try {
-    const res = await fetch(SUPABASE_URL + '/rest/v1/enderecos?cep=eq.' + cep + '&select=logradouro,numero,bairro,lat,lon', {
-      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
-    });
+    let url = SUPABASE_URL + '/rest/v1/enderecos?select=logradouro,numero,quadra,lote,bairro,lat,lon';
+    const params = [];
+    if (cep) params.push('cep=eq.' + encodeURIComponent(cep));
+    const cleanLog = (logradouro || '').replace(/^(Rua|R\.|Av\.|Trav\.|Al\.)\s*/i, '').trim();
+    if (cleanLog) params.push('logradouro=ilike.*' + encodeURIComponent(cleanLog) + '*');
+    if (numero) params.push('numero=eq.' + encodeURIComponent(numero));
+    if (quadra) params.push('quadra=eq.' + encodeURIComponent(quadra));
+    if (lote) params.push('lote=eq.' + encodeURIComponent(lote));
+    if (bairro) params.push('bairro=ilike.*' + encodeURIComponent(bairro) + '*');
+    if (params.length) url += '&' + params.join('&');
+    url += '&limit=10';
+    const res = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY } });
     const d = await res.json();
     return Array.isArray(d) && d.length ? d : null;
   } catch(e) { return null; }
@@ -283,7 +292,8 @@ async function processFile(file) {
     for (let i=0;i<data.length;i++) {
       const r = data[i];
       const cep = stdCep(r[I_CEP]);
-      const res = await supabaseQuery(cep);
+      const parsed = parseAddress(r[I_ADDR]);
+      const res = await supabaseQuery(cep, parsed.street, parsed.numero, parsed.quadra, parsed.lote, String(r[I_BAIRRO]).trim());
       if (res) {
         // pick best match by logradouro similarity
         const addr = String(r[I_ADDR]).toLowerCase();
