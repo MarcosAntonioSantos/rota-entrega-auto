@@ -382,6 +382,38 @@ async function processFile(file) {
         I_BAIRRO = idx('Bairro'), I_CITY = idx('City'),
         I_CEP = idx('Zipcode/Postal code'), I_LAT = idx('Latitude'), I_LNG = idx('Longitude');
 
+  setProgress(10, 'Consultando ViaCEP...');
+  const ceps = [...new Set(data.map(r => stdCep(r[I_CEP])))];
+  const viacep = {};
+  for (let i=0;i<ceps.length;i++) {
+    viacep[ceps[i]] = await fetchViaCep(ceps[i]);
+    setProgress(10 + (i/ceps.length)*30, 'ViaCEP ' + (i+1) + '/' + ceps.length);
+    await new Promise(res=>setTimeout(res, 120));
+  }
+
+  const srcBairro = {};
+  for (const r of data) {
+    const c = stdCep(r[I_CEP]);
+    if (!srcBairro[c]) srcBairro[c] = {};
+    const b = String(r[I_BAIRRO]).trim();
+    srcBairro[c][b] = (srcBairro[c][b]||0)+1;
+  }
+  const canonBairro = {};
+  const divergences = [];
+  for (const c of ceps) {
+    const res = viacep[c];
+    const srcTop = srcBairro[c] ? Object.entries(srcBairro[c]).sort((a,b)=>b[1]-a[1])[0][0] : '';
+    if (res && !res._error && res.bairro) {
+      canonBairro[c] = res.bairro;
+      if (res.bairro.trim().toLowerCase() !== srcTop.trim().toLowerCase()) {
+        divergences.push([c, srcTop, res.bairro]);
+      }
+    } else {
+      canonBairro[c] = srcTop;
+    }
+  }
+
+
   // geocoding via Supabase (alta precisão)
   const useSupabase = document.getElementById('supabaseChk').checked && supabaseEnabled();
   if (useSupabase) {
@@ -443,37 +475,6 @@ async function processFile(file) {
       }
     }
   }
-  setProgress(10, 'Consultando ViaCEP...');
-  const ceps = [...new Set(data.map(r => stdCep(r[I_CEP])))];
-  const viacep = {};
-  for (let i=0;i<ceps.length;i++) {
-    viacep[ceps[i]] = await fetchViaCep(ceps[i]);
-    setProgress(10 + (i/ceps.length)*30, 'ViaCEP ' + (i+1) + '/' + ceps.length);
-    await new Promise(res=>setTimeout(res, 120));
-  }
-
-  const srcBairro = {};
-  for (const r of data) {
-    const c = stdCep(r[I_CEP]);
-    if (!srcBairro[c]) srcBairro[c] = {};
-    const b = String(r[I_BAIRRO]).trim();
-    srcBairro[c][b] = (srcBairro[c][b]||0)+1;
-  }
-  const canonBairro = {};
-  const divergences = [];
-  for (const c of ceps) {
-    const res = viacep[c];
-    const srcTop = srcBairro[c] ? Object.entries(srcBairro[c]).sort((a,b)=>b[1]-a[1])[0][0] : '';
-    if (res && !res._error && res.bairro) {
-      canonBairro[c] = res.bairro;
-      if (res.bairro.trim().toLowerCase() !== srcTop.trim().toLowerCase()) {
-        divergences.push([c, srcTop, res.bairro]);
-      }
-    } else {
-      canonBairro[c] = srcTop;
-    }
-  }
-
   setProgress(45, 'Padronizando endereços...');
   // building core per row
   const rowCore = data.map(r => buildingCore(r[I_ADDR]));
@@ -566,20 +567,28 @@ async function processFile(file) {
     const sa = parseAddress(data[idxs[0]][I_ADDR]).formatted;
     const warns0 = parseAddress(data[idxs[0]][I_ADDR]).warns;
     const obsBase = [];
-    if (total > 1) obsBase.push('Mais de 1 pacote no mesmo endereço');
     const srcBairros = new Set(idxs.map(i=>String(data[i][I_BAIRRO]).trim()));
     if (srcBairros.size > 1) obsBase.push('Bairro com grafias variantes');
+    // completude: logradouro + (número OU (quadra + lote))
+    const _pa0 = parseAddress(data[idxs[0]][I_ADDR]);
+    const _complete = (_pa0.numero !== null) || (_pa0.quadra && _pa0.lote);
+    if (!_complete) obsBase.push('Endereço incompleto — revisar obrigatoriamente');
     obsBase.push(...warns0);
     for (let n=0;n<idxs.length;n++) {
       const i = idxs[n];
       const r = data[i];
       const w = [...obsBase];
       for (const x of parseAddress(r[I_ADDR]).warns) if (!w.includes(x)) w.push(x);
-      const _pa = parseAddress(r[I_ADDR]);
-      if (_pa.warns.includes('faltando quadra') && _pa.warns.includes('faltando lote') && _pa.warns.includes('faltando número')) {
-        w.push('Endereço incompleto — revisar obrigatoriamente');
-      }
       if (r._moved) w.push('Coordenada corrigida via geocodificação');
+      // remover "faltando X" se endereço completo
+      const _pa = parseAddress(r[I_ADDR]);
+      const _comp = (_pa.numero !== null) || (_pa.quadra && _pa.lote);
+      if (_comp) {
+        // remove warns de campos faltantes
+        for (let wi = w.length-1; wi>=0; wi--) {
+          if (w[wi].startsWith('faltando ')) w.splice(wi,1);
+        }
+      }
       finalRows.push({
         'Ordem Otimizada da Rota': stopNumber[k],
         'Parada Consolidada': stopNumber[k],
